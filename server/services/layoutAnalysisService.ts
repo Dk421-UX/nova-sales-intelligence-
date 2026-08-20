@@ -64,7 +64,7 @@ const VERIFIED_LAYOUT_ANALYSES: Record<string, LayoutAnalysis> = {
   'proj_kng_pudur_opt3': {
     projectId: 'proj_kng_pudur_opt3',
     layoutId: 'lay_kng_1',
-    projectName: 'Nova KNG Pudur',
+    projectName: 'Nova Pinnacle',
     layoutType: 'SCHEME_PLAN',
     roads: ['12m Main Access Road', '10m Collector Road', '9m Internal Layout Roads', '7.2m Cross Streets'],
     entrances: ['Primary East Entrance Corridor', 'North-West Secondary Access'],

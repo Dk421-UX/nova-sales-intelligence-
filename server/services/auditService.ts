@@ -18,6 +18,15 @@ export function recordAuditLog(entry: AuditLogEntry) {
     const id = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
 
+    // Verify project_id exists if provided, otherwise safely store null to prevent FK violations
+    let targetProjectId = entry.project_id || null;
+    if (targetProjectId) {
+      const projExists = db.prepare('SELECT 1 FROM projects WHERE id = ?').get(targetProjectId);
+      if (!projExists) {
+        targetProjectId = null;
+      }
+    }
+
     db.prepare(`
       INSERT INTO audit_logs (
         id, entity_type, entity_id, project_id, action, old_values, new_values, performed_by, user_role, ip_address, created_at
@@ -26,7 +35,7 @@ export function recordAuditLog(entry: AuditLogEntry) {
       id,
       entry.entity_type,
       entry.entity_id,
-      entry.project_id || null,
+      targetProjectId,
       entry.action,
       entry.old_values ? JSON.stringify(entry.old_values) : null,
       entry.new_values ? JSON.stringify(entry.new_values) : null,
@@ -37,6 +46,7 @@ export function recordAuditLog(entry: AuditLogEntry) {
     );
   } catch (err) {
     console.error('[AuditService] Failed to record audit log:', err);
+    throw err;
   }
 }
 

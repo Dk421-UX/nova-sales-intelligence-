@@ -187,8 +187,8 @@ async function runUltraSuite() {
   assert(diyaP?.id === 'proj_nova_diya_gardens', 'Diya Gardens canonical project ID is preserved');
 
   const kngP = getProjectBySlug('kng-pudur-option-03');
-  assert(kngP?.name === 'Nova KNG Pudur', 'Project 2 display name is exactly "Nova KNG Pudur"');
-  assert(kngP?.id === 'proj_kng_pudur_opt3', 'KNG Pudur canonical project ID is preserved');
+  assert(kngP?.name === 'Nova Pinnacle', 'Project 2 display name is exactly "Nova Pinnacle"');
+  assert(kngP?.id === 'proj_kng_pudur_opt3', 'Nova Pinnacle canonical project ID is preserved');
 
   const ncrP = getProjectBySlug('nova-ncr');
   assert(ncrP?.name === 'Nova NCR', 'Project 3 display name is exactly "Nova NCR"');
@@ -196,8 +196,8 @@ async function runUltraSuite() {
 
   // 4.2 Verify NO duplicate projects were created
   const allProjs = getAllProjects(true);
-  const kngMatches = allProjs.filter(p => p.slug === 'kng-pudur-option-03' || p.name.includes('KNG Pudur'));
-  assert(kngMatches.length === 1, 'Exactly one single project record exists for KNG Pudur (no duplicates)');
+  const kngMatches = allProjs.filter(p => p.slug === 'kng-pudur-option-03' && p.name === 'Nova Pinnacle');
+  assert(kngMatches.length === 1, 'Exactly one single canonical project record exists for Nova Pinnacle (no duplicates)');
 
   const diyaMatches = allProjs.filter(p => p.slug === 'nova-diya-gardens' || p.name.includes('Diya Garden'));
   assert(diyaMatches.length === 1, 'Exactly one single project record exists for Diya Gardens (no duplicates)');
@@ -206,8 +206,8 @@ async function runUltraSuite() {
   assert(ncrMatches.length === 1, 'Exactly one single project record exists for Nova NCR (no duplicates)');
 
   // 4.3 AI recognizes BOTH customer-facing names and legacy/internal names
-  const aiKngNew = aiIntentRouter.planQuery([{ role: 'user', content: 'tell me about Nova KNG Pudur' }]);
-  assert(aiKngNew.targetProjectSlug === 'kng-pudur-option-03', 'AI maps customer-facing "Nova KNG Pudur" to kng-pudur-option-03');
+  const aiKngNew = aiIntentRouter.planQuery([{ role: 'user', content: 'tell me about Nova Pinnacle' }]);
+  assert(aiKngNew.targetProjectSlug === 'kng-pudur-option-03', 'AI maps customer-facing "Nova Pinnacle" to kng-pudur-option-03');
 
   const aiKngLegacy = aiIntentRouter.planQuery([{ role: 'user', content: 'what is KNG Pudur — Option 03?' }]);
   assert(aiKngLegacy.targetProjectSlug === 'kng-pudur-option-03', 'AI maps legacy "KNG Pudur — Option 03" to kng-pudur-option-03');

@@ -58,6 +58,7 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -70,14 +71,24 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
   }, [selectedProjectId]);
 
   const loadProjects = async () => {
+    setLoadError(null);
     try {
       const projList = await api.getCrmProjects();
-      setProjects(projList);
-      if (projList.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(projList[0].id);
+      setProjects(projList || []);
+      if (projList && projList.length > 0) {
+        setSelectedProjectId(prev => prev || projList[0].id);
+      } else {
+        setLoadError('No projects found in CRM database.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load CRM projects:', err);
+      const msg = err.message || 'Failed to load projects';
+      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('token')) {
+        localStorage.removeItem('nova_auth_token');
+        onLogout();
+        return;
+      }
+      setLoadError(msg);
     }
   };
 
@@ -86,23 +97,29 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
     try {
       const selectedProj = projects.find(p => p.id === projId);
       const [propsData, draftsData, buildingsData, layoutData, layoutsList, healthData, analysisData] = await Promise.all([
-        api.getCrmProperties({ projectId: projId, includeSuperseded: true }),
-        api.getPendingDrafts(projId),
-        selectedProj ? api.getProjectBuildings(selectedProj.slug) : Promise.resolve([]),
-        selectedProj ? api.getProjectLayout(selectedProj.slug) : Promise.resolve(null),
+        api.getCrmProperties({ projectId: projId, includeSuperseded: true }).catch(err => {
+          console.warn('[CRM] Failed to fetch properties:', err);
+          return { properties: [], total: 0 };
+        }),
+        api.getPendingDrafts(projId).catch(err => {
+          console.warn('[CRM] Failed to fetch drafts:', err);
+          return { count: 0, drafts: [] };
+        }),
+        selectedProj ? api.getProjectBuildings(selectedProj.slug).catch(() => []) : Promise.resolve([]),
+        selectedProj ? api.getProjectLayout(selectedProj.slug).catch(() => null) : Promise.resolve(null),
         api.getProjectLayouts(projId).catch(() => []),
         api.getProjectHealth(projId).catch(() => null),
         selectedProj ? api.getProjectLayoutAnalysis(selectedProj.slug).catch(() => null) : Promise.resolve(null)
       ]);
 
       setProperties(propsData.properties || []);
-      setDraftCount(draftsData.totalDrafts || 0);
+      setDraftCount(draftsData?.count ?? draftsData?.totalDrafts ?? draftsData?.drafts?.length ?? 0);
       setBuildings(buildingsData || []);
       setLayout(layoutData);
       setAllLayouts(layoutsList || []);
       setProjectHealth(healthData);
       setLayoutAnalysis(analysisData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load inventory for project:', err);
     } finally {
       setIsLoading(false);
@@ -228,8 +245,28 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
   };
 
   if (!currentProject) {
+    if (loadError) {
+      return (
+        <div className="max-w-7xl" style={{ padding: '4rem 1.5rem', textAlign: 'center' }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '2rem 1.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '480px', margin: '0 auto', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+            <AlertTriangle size={36} style={{ margin: '0 auto 1rem', color: '#ef4444' }} />
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem', color: '#fff', fontWeight: 600 }}>CRM Connection Notice</h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>{loadError}</p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button onClick={() => loadProjects()} className="btn btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <RefreshCw size={14} /> Retry Loading
+              </button>
+              <button onClick={onLogout} className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <LogOut size={14} /> Re-login
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="max-w-7xl" style={{ padding: '4rem 0', textAlign: 'center' }}>
+        <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 1rem', color: 'var(--brand-gold)' }} />
         <p style={{ color: 'var(--text-secondary)' }}>Loading CRM Inventory System...</p>
       </div>
     );

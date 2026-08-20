@@ -90,4 +90,27 @@ export function runMigrations(db: DatabaseType = getDb()) {
     insertMigration.run(5, '005_clean_customer_project_names', new Date().toISOString());
     console.log('[Migration] Applied: 005_clean_customer_project_names');
   }
+
+  // Migration 6: Rename Nova KNG Pudur to Nova Pinnacle & Update Nova City Location to Thiruvallur
+  if (!appliedVersions.has(6)) {
+    try {
+      // 1. Rename KNG Pudur to Nova Pinnacle
+      db.prepare(`
+        UPDATE projects SET name = 'Nova Pinnacle', updated_at = ?
+        WHERE id = 'proj_kng_pudur_opt3' OR slug = 'kng-pudur-option-03'
+      `).run(new Date().toISOString());
+
+      // 2. Correct Nova City location and city to Thiruvallur
+      db.prepare(`
+        UPDATE projects SET location = 'Thiruvallur', city = 'Thiruvallur', updated_at = ?
+        WHERE id = 'proj_nova_city' OR slug = 'nova-city'
+      `).run(new Date().toISOString());
+    } catch (e) {
+      console.warn('[Migration 6 Warning]:', e);
+    }
+
+    const insertMigration = db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+    insertMigration.run(6, '006_rename_nova_pinnacle_and_nova_city_thiruvallur', new Date().toISOString());
+    console.log('[Migration] Applied: 006_rename_nova_pinnacle_and_nova_city_thiruvallur');
+  }
 }

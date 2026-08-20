@@ -256,7 +256,7 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
           <input
             type="text"
             id="project-search"
-            placeholder="Search by project name or location (e.g. Vandalur, KNG Pudur, Moolakadai)..."
+            placeholder="Search by project name or location (e.g. Vandalur, Nova Pinnacle, Thiruvallur)..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             style={{ width: '100%', padding: '0.9rem 1rem 0.9rem 2.85rem', fontSize: '0.95rem' }}

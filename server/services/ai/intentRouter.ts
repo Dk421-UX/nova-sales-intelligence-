@@ -26,7 +26,7 @@ const PROJECT_ALIASES: Record<string, string> = {
   'extension i': 'nova-diya-gardens',
   'extension 1': 'nova-diya-gardens',
 
-  // Nova KNG Pudur (Customer-Facing & Legacy)
+  // Nova KNG Pudur / Pinnacle (Customer-Facing & Legacy)
   'kng': 'kng-pudur-option-03',
   'kng pudur': 'kng-pudur-option-03',
   'nova kng pudur': 'kng-pudur-option-03',

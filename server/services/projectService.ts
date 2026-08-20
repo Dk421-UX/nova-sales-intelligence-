@@ -351,19 +351,25 @@ export function deleteProject(id: string, userId: string, userRole: string) {
   if (!existing) throw new Error(`Project ${id} not found.`);
 
   const transaction = db.transaction(() => {
-    // Cascade deletion
+    // Explicitly delete all dependent records before removing the project
     db.prepare('DELETE FROM properties WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM layouts WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM project_versions WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM project_media WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM buildings WHERE project_id = ?').run(id);
+    db.prepare('DELETE FROM data_conflicts WHERE project_id = ?').run(id);
+    db.prepare('DELETE FROM draft_changes WHERE project_id = ?').run(id);
+    db.prepare('DELETE FROM enquiries WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM imports WHERE detected_project_id = ?').run(id);
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 
+    // Record audit log for project deletion.
+    // project_id is set to null because the project row was deleted (satisfies audit_logs.project_id FK constraint),
+    // while entity_id: id and old_values: existing preserve the deleted project's full identity and metadata.
     recordAuditLog({
       entity_type: 'PROJECT',
       entity_id: id,
-      project_id: id,
+      project_id: null,
       action: 'DELETE',
       old_values: existing,
       performed_by: userId,

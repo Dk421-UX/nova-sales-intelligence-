@@ -161,7 +161,7 @@ export function seedDatabase() {
     );
 
     // -------------------------------------------------------------
-    // PROJECT 2: Nova KNG Pudur (PLOT REFERENCE)
+    // PROJECT 2: Nova Pinnacle (PLOT REFERENCE)
     // -------------------------------------------------------------
     let kngSvg = '';
     const kngSvgPath = path.join(svgDir, 'layout_scheme_plan_option_03.svg');
@@ -172,7 +172,7 @@ export function seedDatabase() {
     insertProject.run(
       'proj_kng_pudur_opt3',
       'kng-pudur-option-03',
-      'Nova KNG Pudur',
+      'Nova Pinnacle',
       'PLOT',
       'KNG Pudur',
       'Coimbatore',
@@ -373,8 +373,8 @@ export function seedDatabase() {
       'nova-city',
       'Nova City',
       'PLOT',
-      'Suburban Growth Corridor',
-      'Coimbatore',
+      'Thiruvallur',
+      'Thiruvallur',
       'Nova City provides spacious residential plots with areas up to 3,367 sq.ft in a fast-appreciating development hub.',
       JSON.stringify(['Verified Plots from 1,000 to 3,367 sq.ft', 'Immediate Construction Ready', 'Broad Access Roads']),
       JSON.stringify(['Gated Layout', 'Water Supply Points', 'Electricity Lines']),

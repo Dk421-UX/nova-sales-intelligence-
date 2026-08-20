@@ -58,8 +58,8 @@ async function runSuite() {
   assert((diyaProj?.stats?.total_inventory ?? 0) === 0, `Nova Diya Gardens starts with clean 0 inventory baseline (Got ${diyaProj?.stats?.total_inventory})`);
 
   const kngProj = getProjectBySlug('kng-pudur-option-03');
-  assert(kngProj !== null && kngProj.name === 'Nova KNG Pudur', 'Nova KNG Pudur layout registered in project registry');
-  assert(kngProj?.total_units_reference === 129, 'Nova KNG Pudur references 129 plots architectural structure');
+  assert(kngProj !== null && kngProj.name === 'Nova Pinnacle', 'Nova Pinnacle layout registered in project registry');
+  assert(kngProj?.total_units_reference === 129, 'Nova Pinnacle references 129 plots architectural structure');
 
   const tejasProj = getProjectBySlug('nova-tejas');
   assert(tejasProj !== null && tejasProj.project_type === 'APARTMENT', 'Nova Tejas registered as APARTMENT project');
