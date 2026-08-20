@@ -94,8 +94,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
 });
 
-// Start Server (Binds to 0.0.0.0 for cloud/Render compatibility)
-if (process.env.NODE_ENV !== 'test') {
+// Start Server (Binds to 0.0.0.0 for cloud/Render compatibility, skipped in Vercel Serverless)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(config.port, '0.0.0.0', () => {
     console.log(`[Server] Live on http://0.0.0.0:${config.port}`);
   });
