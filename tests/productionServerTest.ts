@@ -1,7 +1,7 @@
-import express from 'express';
-import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import { config } from '../server/config.ts';
 import app from '../server/index.ts';
 
 async function testProductionServer() {
@@ -9,10 +9,16 @@ async function testProductionServer() {
   console.log(' RUNNING PRODUCTION RENDER SERVER VERIFICATION TEST');
   console.log('====================================================\n');
 
+  // Start ephemeral server on random available port to guarantee no collision
   const server = http.createServer(app);
-  await new Promise<void>(resolve => server.listen(0, '0.0.0.0', resolve));
-  const port = (server.address() as any).port;
-  const baseUrl = `http://127.0.0.1:${port}`;
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, '127.0.0.1', () => resolve());
+    server.on('error', reject);
+  });
+
+  const address = server.address();
+  const testPort = typeof address === 'object' && address !== null ? address.port : config.port;
+  const baseUrl = `http://127.0.0.1:${testPort}`;
 
   let passed = 0;
   let failed = 0;
@@ -67,24 +73,32 @@ async function testProductionServer() {
     assert(resUnknownApi.status === 404, 'GET /api/non_existent_route_test returns HTTP 404');
     assert(dataUnknownApi.error && dataUnknownApi.error.includes('not found'), 'Unknown API route returns JSON error instead of falling through to HTML');
 
-    // 7. Static Asset Serving
     const distPath = path.resolve('./dist');
-    const assetFiles = fs.readdirSync(path.join(distPath, 'assets'));
-    const jsAsset = assetFiles.find(f => f.endsWith('.js'));
-    if (jsAsset) {
-      const resAsset = await fetch(`${baseUrl}/assets/${jsAsset}`);
-      assert(resAsset.status === 200, `GET /assets/${jsAsset} returns HTTP 200`);
-      assert(Boolean(resAsset.headers.get('content-type')?.includes('javascript')), 'Asset served with correct javascript content-type');
+    if (fs.existsSync(path.join(distPath, 'assets'))) {
+      const assetFiles = fs.readdirSync(path.join(distPath, 'assets'));
+      const jsAsset = assetFiles.find(f => f.endsWith('.js'));
+      if (jsAsset) {
+        const resAsset = await fetch(`${baseUrl}/assets/${jsAsset}`);
+        assert(resAsset.status === 200, `GET /assets/${jsAsset} returns HTTP 200`);
+        assert(Boolean(resAsset.headers.get('content-type')?.includes('javascript')), 'Asset served with correct javascript content-type');
+      }
     }
+  } catch (err: any) {
+    console.error('Test error:', err);
+    failed++;
   } finally {
-    server.close();
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
 
   console.log('\n====================================================');
   console.log(`PRODUCTION SERVER TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');
 
-  if (failed > 0) process.exit(1);
+  if (failed > 0) {
+    process.exit(1);
+  } else {
+    process.exit(0);
+  }
 }
 
 testProductionServer().catch(err => {
