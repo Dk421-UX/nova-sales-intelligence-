@@ -7,23 +7,56 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure directories exist
-const dbDir = path.dirname(config.dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+const rootDir = path.resolve(__dirname, '../..');
+
+// Ensure directories exist safely
+function ensureDirectories() {
+  try {
+    const dbDir = path.dirname(config.dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+  } catch (e) {}
+
+  try {
+    if (!fs.existsSync(config.uploadsDir)) {
+      fs.mkdirSync(config.uploadsDir, { recursive: true });
+    }
+  } catch (e) {}
 }
-if (!fs.existsSync(config.uploadsDir)) {
-  fs.mkdirSync(config.uploadsDir, { recursive: true });
-}
+
+ensureDirectories();
 
 let dbInstance: DatabaseType | null = null;
 
 export function getDb(): DatabaseType {
   if (!dbInstance) {
+    ensureDirectories();
+
+    // In serverless, if template DB exists in project root, copy it to /tmp if not already present
+    if (config.isServerless && !fs.existsSync(config.dbPath)) {
+      const templateDb = path.join(rootDir, 'nova_explorer.db');
+      if (fs.existsSync(templateDb)) {
+        try {
+          fs.copyFileSync(templateDb, config.dbPath);
+        } catch (e) {
+          console.warn('[DB] Could not copy template DB to /tmp:', e);
+        }
+      }
+    }
+
     dbInstance = new Database(config.dbPath, {
       verbose: config.nodeEnv === 'development' ? undefined : undefined,
     });
-    dbInstance.pragma('journal_mode = WAL');
+    
+    try {
+      dbInstance.pragma('journal_mode = WAL');
+    } catch (e) {
+      try {
+        dbInstance.pragma('journal_mode = DELETE');
+      } catch (err) {}
+    }
+    
     dbInstance.pragma('foreign_keys = ON');
     initSchema(dbInstance);
   }
