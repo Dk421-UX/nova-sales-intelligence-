@@ -68,15 +68,24 @@ app.use('/api/public', publicRouter);
 app.use('/api/crm', crmRouter);
 app.use('/api/ai', aiRouter);
 
-// Production Client serving
-if (config.nodeEnv === 'production') {
-  const distPath = path.join(rootDir, 'dist');
-  if (fs.existsSync(distPath)) {
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+// Strict 404 for unhandled API routes (prevents accidental SPA HTML fallback for missing API endpoints)
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API endpoint '${req.originalUrl || req.url}' not found` });
+});
+
+// Production Client serving (Serve dist static assets & SPA index.html fallback)
+const distPath = path.join(rootDir, 'dist');
+const indexHtmlPath = path.join(distPath, 'index.html');
+
+if (fs.existsSync(indexHtmlPath)) {
+  app.use(express.static(distPath));
+  // Universal SPA fallback for GET requests that didn't match static files or API
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      return res.sendFile(indexHtmlPath);
+    }
+    next();
+  });
 }
 
 // Global Error Handler
@@ -85,10 +94,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
 });
 
-// Start Server
+// Start Server (Binds to 0.0.0.0 for cloud/Render compatibility)
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(config.port, () => {
-    console.log(`[Server] Live on http://localhost:${config.port}`);
+  app.listen(config.port, '0.0.0.0', () => {
+    console.log(`[Server] Live on http://0.0.0.0:${config.port}`);
   });
 }
 
