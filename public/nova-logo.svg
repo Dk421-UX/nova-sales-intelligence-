@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <!-- Background Symbol -->
+  <rect x="0" y="4" width="40" height="40" rx="7" fill="#18202c" stroke="#d4af37" stroke-width="1.5"/>
+  
+  <!-- N letter in gold -->
+  <path d="M9 34V14L22 34V14" stroke="#d4af37" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 14V34" stroke="#d4af37" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Small star accent -->
+  <circle cx="31" cy="12" r="2.5" fill="#d4af37" opacity="0.85"/>
+  <circle cx="31" cy="36" r="1.8" fill="#d4af37" opacity="0.5"/>
+  <circle cx="31" cy="24" r="1.2" fill="#d4af37" opacity="0.35"/>
+  
+  <!-- NOVA text -->
+  <text x="50" y="24" font-family="'Outfit', 'Segoe UI', sans-serif" font-weight="800" font-size="16" fill="#ffffff" letter-spacing="0.05em">NOVA</text>
+  
+  <!-- LIFE SPACE text -->
+  <text x="50" y="38" font-family="'Outfit', 'Segoe UI', sans-serif" font-weight="600" font-size="10.5" fill="#d4af37" letter-spacing="0.08em">LIFE SPACE</text>
+  
+  <!-- Property Explorer small text -->
+  <text x="50" y="47" font-family="'Plus Jakarta Sans', 'Segoe UI', sans-serif" font-weight="500" font-size="7" fill="#64748b" letter-spacing="0.12em">PROPERTY EXPLORER</text>
+</svg>
