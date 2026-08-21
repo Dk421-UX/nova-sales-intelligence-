@@ -9,7 +9,7 @@
     "dev:client": "vite",
     "build": "tsc && vite build",
     "start": "tsx server/index.ts",
-    "test": "tsx tests/runAllTests.ts",
+    "test": "cross-env NODE_ENV=test tsx tests/runAllTests.ts",
     "seed": "tsx server/db/seed.ts",
     "preview": "vite preview"
   },
@@ -44,6 +44,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0"
   }
 }

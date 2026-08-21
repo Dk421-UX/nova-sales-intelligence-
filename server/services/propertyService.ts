@@ -379,13 +379,22 @@ export function createProperty(data: any, userId: string, userRole: string): Pro
     user_role: userRole
   });
 
+  const createdProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
+  if (createdProp) {
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('properties', createdProp).catch(() => {});
+    }).catch(() => {});
+  }
+
   return getPropertyById(id, true)!;
 }
 
 export function updateProperty(id: string, updates: any, userId: string, userRole: string, isDraft = false): PropertyDto {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
-  if (!existing) throw new Error(`Property ${id} not found.`);
+  if (!existing) {
+    throw new Error(`Property with id '${id}' not found.`);
+  }
 
   const now = new Date().toISOString();
 
@@ -446,6 +455,13 @@ export function updateProperty(id: string, updates: any, userId: string, userRol
       performed_by: userId,
       user_role: userRole
     });
+  }
+
+  const updatedProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
+  if (updatedProp) {
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('properties', updatedProp).catch(() => {});
+    }).catch(() => {});
   }
 
   return getPropertyById(id, true)!;

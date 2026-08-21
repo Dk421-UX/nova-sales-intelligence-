@@ -27,23 +27,42 @@ export function recordAuditLog(entry: AuditLogEntry) {
       }
     }
 
+    const auditPayload = {
+      id,
+      entity_type: entry.entity_type,
+      entity_id: entry.entity_id,
+      project_id: targetProjectId,
+      action: entry.action,
+      old_values: entry.old_values ? JSON.stringify(entry.old_values) : null,
+      new_values: entry.new_values ? JSON.stringify(entry.new_values) : null,
+      performed_by: entry.performed_by,
+      user_role: entry.user_role,
+      ip_address: entry.ip_address || null,
+      created_at: now
+    };
+
     db.prepare(`
       INSERT INTO audit_logs (
         id, entity_type, entity_id, project_id, action, old_values, new_values, performed_by, user_role, ip_address, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id,
-      entry.entity_type,
-      entry.entity_id,
-      targetProjectId,
-      entry.action,
-      entry.old_values ? JSON.stringify(entry.old_values) : null,
-      entry.new_values ? JSON.stringify(entry.new_values) : null,
-      entry.performed_by,
-      entry.user_role,
-      entry.ip_address || null,
-      now
+      auditPayload.id,
+      auditPayload.entity_type,
+      auditPayload.entity_id,
+      auditPayload.project_id,
+      auditPayload.action,
+      auditPayload.old_values,
+      auditPayload.new_values,
+      auditPayload.performed_by,
+      auditPayload.user_role,
+      auditPayload.ip_address,
+      auditPayload.created_at
     );
+
+    // Asynchronously sync audit entry to Supabase PostgreSQL
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('audit_logs', auditPayload).catch(() => {});
+    }).catch(() => {});
   } catch (err) {
     console.error('[AuditService] Failed to record audit log:', err);
     throw err;

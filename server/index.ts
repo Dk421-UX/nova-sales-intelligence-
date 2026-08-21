@@ -10,6 +10,7 @@ import { seedDatabase } from './db/seed.ts';
 import { validateEnvironment, printStartupStatus } from './utils/envValidator.ts';
 import { getSystemHealth } from './services/healthService.ts';
 import { isSupabaseConfigured } from './db/supabaseClient.ts';
+import { initAndSyncFromSupabase } from './db/supabaseSync.ts';
 import { publicRouter } from './routes/publicApi.ts';
 import { crmRouter } from './routes/crmApi.ts';
 import { aiRouter } from './routes/aiApi.ts';
@@ -52,13 +53,18 @@ app.use('/layouts', express.static(publicLayoutsDir));
 
 // Initialize Database & Startup Safety Check
 try {
-  if (config.nodeEnv === 'production') {
-    if (!isSupabaseConfigured()) {
+  if (config.nodeEnv === 'production' || isSupabaseConfigured()) {
+    if (config.nodeEnv === 'production' && !isSupabaseConfigured()) {
       const errMsg = '[Startup FATAL] Production mode requires Supabase PostgreSQL. SUPABASE_URL and Service/Anon keys are missing.';
       console.error(errMsg);
       throw new Error(errMsg);
     }
-    console.log('[Startup] Production Database: Supabase PostgreSQL is the permanent authoritative source of truth. Auto-seeding is disabled.');
+    console.log('[Startup] Production Database: Supabase PostgreSQL is the permanent authoritative source of truth.');
+    // Hydrate state from Supabase PostgreSQL asynchronously
+    initAndSyncFromSupabase().catch(err => {
+      console.error('[Startup] Supabase hydration error:', err.message);
+      if (config.nodeEnv === 'production') process.exit(1);
+    });
   } else {
     // Local Development Mode
     const db = getDb();

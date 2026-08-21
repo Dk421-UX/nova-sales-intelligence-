@@ -214,7 +214,13 @@ export function uploadProjectLayout(
   });
 
   transaction();
-  return db.prepare('SELECT * FROM layouts WHERE id = ?').get(layoutId);
+  const createdLayout = db.prepare('SELECT * FROM layouts WHERE id = ?').get(layoutId) as any;
+  if (createdLayout) {
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('layouts', createdLayout).catch(() => {});
+    }).catch(() => {});
+  }
+  return createdLayout;
 }
 
 export function getProjectBuildings(projectId: string) {
@@ -308,6 +314,13 @@ export function createProject(
     user_role: userRole
   });
 
+  const insertedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (insertedProject) {
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('projects', insertedProject).catch(() => {});
+    }).catch(() => {});
+  }
+
   return getProjectById(id, true);
 }
 
@@ -343,6 +356,13 @@ export function updateProject(id: string, updates: Partial<ProjectDto>, userId: 
     user_role: userRole
   });
 
+  const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (updatedProject) {
+    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
+      syncEntityToSupabase('projects', updatedProject).catch(() => {});
+    }).catch(() => {});
+  }
+
   return getProjectById(id, true);
 }
 
@@ -355,8 +375,6 @@ export function deleteProject(id: string, userId: string, userRole: string) {
     // Explicitly delete all dependent records before removing the project
     db.prepare('DELETE FROM properties WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM layouts WHERE project_id = ?').run(id);
-    db.prepare('DELETE FROM project_versions WHERE project_id = ?').run(id);
-    db.prepare('DELETE FROM project_media WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM buildings WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM data_conflicts WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM draft_changes WHERE project_id = ?').run(id);
@@ -364,9 +382,6 @@ export function deleteProject(id: string, userId: string, userRole: string) {
     db.prepare('DELETE FROM imports WHERE detected_project_id = ?').run(id);
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 
-    // Record audit log for project deletion.
-    // project_id is set to null because the project row was deleted (satisfies audit_logs.project_id FK constraint),
-    // while entity_id: id and old_values: existing preserve the deleted project's full identity and metadata.
     recordAuditLog({
       entity_type: 'PROJECT',
       entity_id: id,
@@ -379,6 +394,11 @@ export function deleteProject(id: string, userId: string, userRole: string) {
   });
 
   transaction();
+
+  import('../db/supabaseSync.ts').then(({ deleteEntityFromSupabase }) => {
+    deleteEntityFromSupabase('projects', id).catch(() => {});
+  }).catch(() => {});
+
   return { success: true, message: `Project '${existing.name}' and all associated inventory and layouts were successfully deleted.` };
 }
 
