@@ -13,7 +13,7 @@ import {
 } from '../services/projectService.ts';
 import { getProperties, getPropertyById, createProperty, updateProperty, stageStatusUpdate, archiveProperty, savePropertyGeometry } from '../services/propertyService.ts';
 import { getPendingDrafts, publishProjectDrafts, discardDraftChanges } from '../services/publishService.ts';
-import { parseExcelSheets, generateImportPreview, applyImport } from '../services/excelService.ts';
+import { parseExcelSheets, generateImportPreview, applyImport, inspectSheetStructure } from '../services/excelService.ts';
 import { getAuditLogs } from '../services/auditService.ts';
 import { officialWebsiteService } from '../services/officialWebsiteService.ts';
 import { layoutAnalysisService } from '../services/layoutAnalysisService.ts';
@@ -483,7 +483,25 @@ crmRouter.post('/excel/preview', authenticateToken, upload.single('file'), (req:
     const preview = generateImportPreview(req.file.buffer, req.file.originalname, projectId, sheetName, req.user!.id, parsedCustomMapping);
     res.json({ success: true, preview });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Failed to generate import preview.' });
+    let availableHeaders: any[] = [];
+    let identifierCandidates: any[] = [];
+    try {
+      if (req.file && req.body.sheetName) {
+        const inspected = inspectSheetStructure(req.file.buffer, req.body.sheetName, req.body.projectId);
+        availableHeaders = inspected.headers;
+        identifierCandidates = inspected.candidates;
+      }
+    } catch (_) {}
+
+    res.status(400).json({
+      error: err.message || 'Failed to generate import preview.',
+      requiresMapping: Boolean(
+        err.message?.includes("couldn't confidently identify") ||
+        err.message?.includes('property identifier')
+      ),
+      availableHeaders,
+      identifierCandidates
+    });
   }
 });
 

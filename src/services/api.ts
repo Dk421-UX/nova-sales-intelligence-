@@ -36,7 +36,12 @@ async function request<T = any>(
     }
 
     if (!res.ok) {
-      throw new Error(data?.error || data?.message || `${fallbackMessage} (HTTP ${res.status})`);
+      const err: any = new Error(data?.error || data?.message || `${fallbackMessage} (HTTP ${res.status})`);
+      err.data = data;
+      err.requiresMapping = data?.requiresMapping;
+      err.availableHeaders = data?.availableHeaders;
+      err.identifierCandidates = data?.identifierCandidates;
+      throw err;
     }
     return data as T;
   }

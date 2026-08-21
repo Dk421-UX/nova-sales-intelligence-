@@ -7,8 +7,31 @@ export type PropertyStatus = typeof SUPPORTED_STATUSES[number];
 
 export interface ColumnMappingItem {
   excelHeader: string;
-  targetField: 'propertyNumber' | 'areaSqft' | 'facing' | 'status' | 'sectionOrPhase' | 'unitType' | 'plinthArea' | 'commonArea' | 'uds' | 'unmapped';
+  targetField: 'propertyNumber' | 'areaSqft' | 'facing' | 'status' | 'sectionOrPhase' | 'unitType' | 'plinthArea' | 'commonArea' | 'uds' | 'floor' | 'unmapped';
   colIndex: number;
+}
+
+export interface IdentifierCandidate {
+  colIndex: number;
+  header: string;
+  normalizedHeader: string;
+  score: number;
+  reason: string;
+  isRecommended: boolean;
+}
+
+export interface CustomColumnMapping {
+  propNumberIdx?: number;
+  areaIdx?: number;
+  facingIdx?: number;
+  statusIdx?: number;
+  sectionIdx?: number;
+  unitTypeIdx?: number;
+  plinthIdx?: number;
+  commonIdx?: number;
+  udsIdx?: number;
+  floorIdx?: number;
+  [key: string]: number | undefined;
 }
 
 export interface ValidationErrorDetail {
@@ -38,7 +61,7 @@ export interface DuplicateRowDetail {
 export interface ImportPreviewRow {
   rowIndex: number;
   propertyNumber: string;
-  propertyType: 'PLOT' | 'APARTMENT' | 'COMMERCIAL_SHOP';
+  propertyType: 'PLOT' | 'APARTMENT' | 'COMMERCIAL_SHOP' | 'VILLA';
   status: string;
   facing: string | null;
   areaSqft: number | null;
@@ -69,12 +92,28 @@ export function sanitizeCellValue(val: any): any {
   return val;
 }
 
+export function normalizeHeaderText(raw: any): string {
+  if (raw === null || raw === undefined) return '';
+  return String(raw)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\s\-_./#:|]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+export function cleanToken(raw: any): string {
+  if (raw === null || raw === undefined) return '';
+  return String(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 export function normalizePropertyIdentifier(val: string): string {
   if (!val) return '';
   return val
     .toLowerCase()
     .trim()
-    .replace(/^plot\s*[-#:]?\s*|^flat\s*[-#:]?\s*|^unit\s*[-#:]?\s*/i, '')
+    .replace(/^plot\s*[-#:]?\s*|^flat\s*[-#:]?\s*|^unit\s*[-#:]?\s*|^villa\s*[-#:]?\s*|^site\s*[-#:]?\s*/i, '')
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -100,13 +139,445 @@ export function parseExcelSheets(buffer: Buffer) {
   return wb.SheetNames;
 }
 
+export function scoreHeaderRow(row: any[], nextRow?: any[], projectType: string = 'PLOT'): number {
+  if (!row || !Array.isArray(row)) return -100;
+  const nonEmpties = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
+  if (nonEmpties.length === 0) return -100;
+  if (nonEmpties.length === 1) return -25; // single banner/title cell
+
+  let score = 0;
+  let matches = 0;
+
+  for (const cell of nonEmpties) {
+    const norm = normalizeHeaderText(cell);
+    const clean = cleanToken(cell);
+
+    // Identifier keywords
+    if (
+      clean.includes('plotno') || clean.includes('plotnumber') || clean.includes('flatno') ||
+      clean.includes('flatnumber') || clean.includes('flatname') || clean.includes('unitno') ||
+      clean.includes('unitnumber') || clean.includes('apartmentno') || clean.includes('villano') ||
+      clean.includes('siteno') || clean.includes('propertyno') || clean.includes('propertyid') ||
+      clean.includes('doorno') || clean === 'plot' || clean === 'plots' || clean === 'flat' ||
+      clean === 'flats' || clean === 'unit' || clean === 'units' || clean === 'villa' ||
+      clean === 'villas' || clean === 'site' || clean === 'sites' || clean === 'property' ||
+      clean === 'properties' || clean === 'sno' || clean === 'sno.' || clean === 'slno' ||
+      clean === 'srno' || norm.includes('plot no') || norm.includes('flat name') ||
+      norm.includes('unit no') || norm.includes('s no') || norm.includes('property no')
+    ) {
+      score += 15;
+      matches++;
+    }
+    // Area keywords
+    else if (
+      clean.includes('area') || clean.includes('sqft') || clean.includes('sqfeet') ||
+      clean.includes('extent') || clean.includes('saleable') || clean.includes('plinth') ||
+      clean.includes('common') || clean.includes('uds') || clean.includes('carpet') ||
+      clean.includes('size') || clean.includes('sba')
+    ) {
+      score += 10;
+      matches++;
+    }
+    // Facing keywords
+    else if (clean.includes('facing') || clean.includes('direction') || clean.includes('orientation') || clean === 'face') {
+      score += 8;
+      matches++;
+    }
+    // Status keywords
+    else if (clean.includes('status') || clean.includes('staus') || clean.includes('stat') || clean.includes('avail') || clean.includes('booking')) {
+      score += 10;
+      matches++;
+    }
+    // Section / Phase keywords
+    else if (clean.includes('phase') || clean.includes('section') || clean.includes('enclave') || clean.includes('block') || clean.includes('sector') || clean.includes('project')) {
+      score += 7;
+      matches++;
+    }
+    // Type / Share / Floor keywords
+    else if (clean.includes('type') || clean.includes('bhk') || clean.includes('share') || clean.includes('floor')) {
+      score += 5;
+      matches++;
+    }
+  }
+
+  if (matches >= 2) score += 15;
+  if (matches >= 3) score += 15;
+  if (nonEmpties.length >= 3) score += nonEmpties.length * 2;
+
+  // Check next row for data-like patterns
+  if (nextRow && Array.isArray(nextRow)) {
+    const nextNonEmpties = nextRow.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
+    let dataSignals = 0;
+    for (const c of nextNonEmpties) {
+      if (typeof c === 'number') dataSignals++;
+      else {
+        const s = String(c).trim().toLowerCase();
+        if (
+          s === 'available' || s === 'booked' || s === 'sold' || s === 'registered' ||
+          s === 'reserved' || s === 'blocked' || s === 'east' || s === 'west' ||
+          s === 'north' || s === 'south' || s.includes('north') || s.includes('south') ||
+          s.includes('east') || s.includes('west') || s === 'nova'
+        ) {
+          dataSignals++;
+        }
+      }
+    }
+    if (dataSignals >= 1) score += 15;
+    if (dataSignals >= 2) score += 10;
+  }
+
+  return score;
+}
+
+export function detectHeaderRowIndex(rawRows: any[][], projectType: string = 'PLOT'): number {
+  let bestRow = 0;
+  let maxScore = -999;
+  const scanLimit = Math.min(25, rawRows.length);
+
+  for (let i = 0; i < scanLimit; i++) {
+    const row = rawRows[i] || [];
+    const nextRow = i + 1 < rawRows.length ? rawRows[i + 1] : undefined;
+    const score = scoreHeaderRow(row, nextRow, projectType);
+    if (score > maxScore) {
+      maxScore = score;
+      bestRow = i;
+    }
+  }
+
+  // Fallback: If maxScore is very low, pick the first row with >= 2 non-empty cells
+  if (maxScore < 5) {
+    for (let i = 0; i < scanLimit; i++) {
+      const nonEmpties = (rawRows[i] || []).filter(c => c !== null && c !== undefined && String(c).trim() !== '');
+      if (nonEmpties.length >= 2) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
+  return bestRow;
+}
+
+export function scorePropertyIdentifier(header: string, projectType: string = 'PLOT'): { score: number; reason: string } {
+  const norm = normalizeHeaderText(header);
+  const clean = cleanToken(header);
+  if (!clean) return { score: 0, reason: 'Empty column header' };
+
+  let score = 0;
+  let reason = '';
+
+  // 1. PLOT variations
+  if (
+    clean.includes('plotno') || clean.includes('plotnumber') || clean.includes('plotnum') ||
+    clean.includes('plotcode') || clean.includes('plotid') || clean.includes('plotname') ||
+    norm.includes('plot no') || norm.includes('plot number') || norm.includes('plot #') ||
+    norm.includes('plot id') || clean === 'plot' || clean === 'plots'
+  ) {
+    score = 100;
+    reason = 'Standard Plot Identifier';
+    if (projectType === 'PLOT') {
+      score += 30;
+      reason = 'Primary Plot Identifier matching PLOT project';
+    }
+  }
+  // 2. APARTMENT / FLAT / UNIT variations
+  else if (
+    clean.includes('flatno') || clean.includes('flatnumber') || clean.includes('flatname') ||
+    clean.includes('flatid') || norm.includes('flat no') || norm.includes('flat name') ||
+    clean === 'flat' || clean === 'flats'
+  ) {
+    score = 100;
+    reason = 'Standard Flat Identifier';
+    if (projectType === 'APARTMENT') {
+      score += 30;
+      reason = 'Primary Flat Identifier matching APARTMENT project';
+    }
+  } else if (
+    clean.includes('unitno') || clean.includes('unitnumber') || clean.includes('unitid') ||
+    clean.includes('unitcode') || norm.includes('unit no') || norm.includes('unit number') ||
+    clean === 'unit' || clean === 'units'
+  ) {
+    score = 95;
+    reason = 'Standard Unit Identifier';
+    if (projectType === 'APARTMENT' || projectType === 'COMMERCIAL_SHOP') {
+      score += 30;
+      reason = 'Primary Unit Identifier matching project type';
+    }
+  } else if (
+    clean.includes('apartmentno') || clean.includes('apartmentnumber') || clean.includes('aptno') ||
+    clean.includes('aptnumber') || norm.includes('apartment no') || norm.includes('apt no') ||
+    clean === 'apartment' || clean === 'apartments' || clean === 'apt'
+  ) {
+    score = 95;
+    reason = 'Standard Apartment Identifier';
+    if (projectType === 'APARTMENT') {
+      score += 30;
+      reason = 'Primary Apartment Identifier matching APARTMENT project';
+    }
+  } else if (clean.includes('doorno') || clean.includes('doornumber') || norm.includes('door no')) {
+    score = 85;
+    reason = 'Door / Unit Identifier';
+  }
+  // 3. VILLA variations
+  else if (
+    clean.includes('villano') || clean.includes('villanumber') || clean.includes('villaid') ||
+    norm.includes('villa no') || norm.includes('villa number') || clean === 'villa' || clean === 'villas'
+  ) {
+    score = 100;
+    reason = 'Standard Villa Identifier';
+    if (projectType === 'VILLA') {
+      score += 35;
+      reason = 'Primary Villa Identifier matching VILLA project';
+    }
+  }
+  // 4. SITE variations
+  else if (
+    clean.includes('siteno') || clean.includes('sitenumber') || clean.includes('siteid') ||
+    norm.includes('site no') || norm.includes('site number') || clean === 'site' || clean === 'sites'
+  ) {
+    score = 95;
+    reason = 'Standard Site Identifier';
+    if (projectType === 'PLOT') {
+      score += 25;
+      reason = 'Site Identifier for PLOT project';
+    }
+  }
+  // 5. PROPERTY variations
+  else if (
+    clean.includes('propertyno') || clean.includes('propertynumber') || clean.includes('propertyid') ||
+    norm.includes('property no') || norm.includes('property number') || norm.includes('property id') ||
+    clean === 'property' || clean === 'properties'
+  ) {
+    score = 90;
+    reason = 'General Property Identifier';
+    score += 15;
+  }
+  // 6. COMMERCIAL / SHOP variations
+  else if (
+    clean.includes('shopno') || clean.includes('shopnumber') || clean.includes('shopid') ||
+    norm.includes('shop no') || clean === 'shop' || clean === 'shops'
+  ) {
+    score = 90;
+    reason = 'Commercial Shop Identifier';
+    if (projectType === 'COMMERCIAL_SHOP') {
+      score += 35;
+      reason = 'Primary Shop Identifier matching COMMERCIAL project';
+    }
+  }
+  // 7. S.NO / SERIAL NUMBER (Low priority fallback)
+  else if (
+    clean === 'sno' || clean === 'sno.' || clean === 'slno' || clean === 'slno.' ||
+    clean === 'srno' || clean === 'srno.' || norm === 's no' || norm === 'sl no' ||
+    norm === 'sr no' || norm === 'serial no' || norm === 'serial number' ||
+    clean === 'serialno' || clean === 'serialnumber'
+  ) {
+    score = 30; // low fallback score
+    reason = 'Serial Number (Fallback only if no primary property identifier exists)';
+  }
+
+  return { score, reason };
+}
+
+export function detectColumnMappings(
+  headers: string[],
+  projectType: string = 'PLOT',
+  customMapping?: CustomColumnMapping
+) {
+  let propNumberIdx = -1;
+  let areaIdx = -1;
+  let facingIdx = -1;
+  let statusIdx = -1;
+  let sectionIdx = -1;
+  let plinthIdx = -1;
+  let commonIdx = -1;
+  let udsIdx = -1;
+  let floorIdx = -1;
+  let unitTypeIdx = -1;
+
+  // 1. Gather all property identifier candidates
+  const candidates: IdentifierCandidate[] = [];
+  headers.forEach((h, idx) => {
+    const { score, reason } = scorePropertyIdentifier(h, projectType);
+    if (score >= 25) {
+      candidates.push({
+        colIndex: idx,
+        header: h || `Column ${idx + 1}`,
+        normalizedHeader: normalizeHeaderText(h),
+        score,
+        reason,
+        isRecommended: false
+      });
+    }
+  });
+
+  candidates.sort((a, b) => b.score - a.score);
+  if (candidates.length > 0) {
+    candidates[0].isRecommended = true;
+  }
+
+  // Check if multiple strong candidates exist (e.g. candidates with close score)
+  const strongCandidates = candidates.filter(c => c.score >= 80);
+  const hasMultipleCandidates = strongCandidates.length > 1;
+
+  // Auto-detect property number index if not provided by custom mapping
+  if (candidates.length > 0) {
+    propNumberIdx = candidates[0].colIndex;
+  }
+
+  // 2. Map remaining columns (area, facing, status, phase/section, plinth, common, uds, floor, unitType)
+  headers.forEach((h, idx) => {
+    // Avoid re-mapping the designated property number column to other fields
+    if (idx === propNumberIdx && candidates.length > 0 && candidates[0].score >= 80) {
+      return;
+    }
+
+    const norm = normalizeHeaderText(h);
+    const clean = cleanToken(h);
+
+    if (
+      areaIdx === -1 &&
+      (clean.includes('area') || clean.includes('sqft') || clean.includes('sqfeet') ||
+       clean.includes('extent') || clean.includes('totalsaleablearea') || clean.includes('saleablearea') ||
+       clean.includes('saleable') || clean.includes('builtup') || clean.includes('sba') ||
+       clean.includes('size') || norm.includes('sq ft') || norm.includes('sq. ft') ||
+       norm.includes('extent sqft') || norm.includes('total saleable'))
+    ) {
+      areaIdx = idx;
+    } else if (
+      facingIdx === -1 &&
+      (clean.includes('facing') || clean.includes('direction') || clean.includes('orientation') || clean === 'face' || norm.includes('facing'))
+    ) {
+      facingIdx = idx;
+    } else if (
+      statusIdx === -1 &&
+      (clean.includes('status') || clean.includes('staus') || clean.includes('stat') ||
+       clean.includes('availability') || clean.includes('state') || clean.includes('bookingstatus') ||
+       clean === 'avail')
+    ) {
+      statusIdx = idx;
+    } else if (
+      sectionIdx === -1 &&
+      (clean.includes('phase') || clean.includes('section') || clean.includes('enclave') ||
+       clean.includes('block') || clean.includes('sector') || clean.includes('subdivision') ||
+       clean.includes('project') || clean.includes('tower') || clean.includes('wing') ||
+       norm.includes('sub division') || norm.includes('sub-division'))
+    ) {
+      sectionIdx = idx;
+    } else if (plinthIdx === -1 && clean.includes('plinth')) {
+      plinthIdx = idx;
+    } else if (commonIdx === -1 && clean.includes('common')) {
+      commonIdx = idx;
+    } else if (udsIdx === -1 && (clean.includes('uds') || clean.includes('undivided'))) {
+      udsIdx = idx;
+    } else if (floorIdx === -1 && (clean.includes('floor') || clean.includes('level'))) {
+      floorIdx = idx;
+    } else if (
+      unitTypeIdx === -1 &&
+      (clean.includes('unittype') || clean.includes('type') || clean.includes('bhk') || clean.includes('configuration') || clean.includes('flattype'))
+    ) {
+      unitTypeIdx = idx;
+    }
+  });
+
+  // Apply custom mapping overrides if explicitly passed
+  if (customMapping) {
+    if (customMapping.propNumberIdx !== undefined) propNumberIdx = customMapping.propNumberIdx;
+    if (customMapping.propertyNumber !== undefined) propNumberIdx = customMapping.propertyNumber;
+    if (customMapping.areaIdx !== undefined) areaIdx = customMapping.areaIdx;
+    if (customMapping.areaSqft !== undefined) areaIdx = customMapping.areaSqft;
+    if (customMapping.facingIdx !== undefined) facingIdx = customMapping.facingIdx;
+    if (customMapping.facing !== undefined) facingIdx = customMapping.facing;
+    if (customMapping.statusIdx !== undefined) statusIdx = customMapping.statusIdx;
+    if (customMapping.status !== undefined) statusIdx = customMapping.status;
+    if (customMapping.sectionIdx !== undefined) sectionIdx = customMapping.sectionIdx;
+    if (customMapping.sectionOrPhase !== undefined) sectionIdx = customMapping.sectionOrPhase;
+    if (customMapping.unitTypeIdx !== undefined) unitTypeIdx = customMapping.unitTypeIdx;
+    if (customMapping.unitType !== undefined) unitTypeIdx = customMapping.unitType;
+    if (customMapping.plinthIdx !== undefined) plinthIdx = customMapping.plinthIdx;
+    if (customMapping.plinthArea !== undefined) plinthIdx = customMapping.plinthArea;
+    if (customMapping.commonIdx !== undefined) commonIdx = customMapping.commonIdx;
+    if (customMapping.commonArea !== undefined) commonIdx = customMapping.commonArea;
+    if (customMapping.udsIdx !== undefined) udsIdx = customMapping.udsIdx;
+    if (customMapping.uds !== undefined) udsIdx = customMapping.uds;
+    if (customMapping.floorIdx !== undefined) floorIdx = customMapping.floorIdx;
+  }
+
+  const columnMap = {
+    propNumberIdx,
+    areaIdx,
+    facingIdx,
+    statusIdx,
+    sectionIdx,
+    plinthIdx,
+    commonIdx,
+    udsIdx,
+    floorIdx,
+    unitTypeIdx
+  };
+
+  const detectedMapping: ColumnMappingItem[] = headers.map((h, idx) => {
+    let targetField: ColumnMappingItem['targetField'] = 'unmapped';
+    if (idx === columnMap.propNumberIdx) targetField = 'propertyNumber';
+    else if (idx === columnMap.areaIdx) targetField = 'areaSqft';
+    else if (idx === columnMap.facingIdx) targetField = 'facing';
+    else if (idx === columnMap.statusIdx) targetField = 'status';
+    else if (idx === columnMap.sectionIdx) targetField = 'sectionOrPhase';
+    else if (idx === columnMap.unitTypeIdx) targetField = 'unitType';
+    else if (idx === columnMap.plinthIdx) targetField = 'plinthArea';
+    else if (idx === columnMap.commonIdx) targetField = 'commonArea';
+    else if (idx === columnMap.udsIdx) targetField = 'uds';
+    else if (idx === columnMap.floorIdx) targetField = 'floor';
+
+    return {
+      excelHeader: h || `Column ${idx + 1}`,
+      targetField,
+      colIndex: idx
+    };
+  });
+
+  return { columnMap, candidates, hasMultipleCandidates, detectedMapping };
+}
+
+export function inspectSheetStructure(
+  buffer: Buffer,
+  sheetName: string,
+  targetProjectId?: string
+) {
+  const wb = xlsx.read(buffer, { type: 'buffer' });
+  const sheet = wb.Sheets[sheetName] || wb.Sheets[wb.SheetNames[0]];
+  if (!sheet) throw new Error(`Sheet '${sheetName}' not found in Excel workbook.`);
+
+  let projectType = 'PLOT';
+  if (targetProjectId) {
+    const db = getDb();
+    const project = db.prepare('SELECT project_type FROM projects WHERE id = ?').get(targetProjectId) as any;
+    if (project?.project_type) projectType = project.project_type;
+  }
+
+  const rawRows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+  if (rawRows.length < 2) throw new Error('Sheet does not contain sufficient header and data rows.');
+
+  const headerRowIdx = detectHeaderRowIndex(rawRows, projectType);
+  const headers = (rawRows[headerRowIdx] || []).map(h => String(h || '').trim());
+  const { columnMap, candidates, hasMultipleCandidates, detectedMapping } = detectColumnMappings(headers, projectType);
+
+  return {
+    headerRowIndex: headerRowIdx + 1,
+    headers: headers.map((h, idx) => ({ header: h || `Column ${idx + 1}`, colIndex: idx })),
+    candidates,
+    hasMultipleCandidates,
+    columnMap,
+    detectedMapping
+  };
+}
+
 export function generateImportPreview(
   buffer: Buffer,
   filename: string,
   targetProjectId: string,
   sheetName: string,
   userId: string,
-  customMapping?: Partial<Record<'propNumberIdx' | 'areaIdx' | 'facingIdx' | 'statusIdx' | 'sectionIdx', number>>
+  customMapping?: CustomColumnMapping
 ) {
   const db = getDb();
   if (buffer.length > 15 * 1024 * 1024) {
@@ -124,53 +595,19 @@ export function generateImportPreview(
   const rawRows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 });
   if (rawRows.length < 2) throw new Error('Sheet does not contain sufficient header and data rows.');
 
-  // Find header row (usually row 1 or row 2)
-  let headerRowIdx = 0;
-  for (let i = 0; i < Math.min(6, rawRows.length); i++) {
-    const row = rawRows[i] || [];
-    const textJoined = row.map(c => String(c || '').toLowerCase()).join(' ');
-    if (
-      textJoined.includes('plot') ||
-      textJoined.includes('flat') ||
-      textJoined.includes('unit') ||
-      textJoined.includes('sno') ||
-      textJoined.includes('s.no') ||
-      textJoined.includes('sqft') ||
-      textJoined.includes('area')
-    ) {
-      headerRowIdx = i;
-      break;
-    }
-  }
-
+  // Upgraded dynamic header row detection
+  const headerRowIdx = detectHeaderRowIndex(rawRows, project.project_type);
   const headers = (rawRows[headerRowIdx] || []).map(h => String(h || '').trim());
-  const detected = mapColumnIndices(headers);
-  const columnMap = {
-    ...detected,
-    ...(customMapping || {})
-  };
 
-  const detectedMapping: ColumnMappingItem[] = headers.map((h, idx) => {
-    let targetField: ColumnMappingItem['targetField'] = 'unmapped';
-    if (idx === columnMap.propNumberIdx) targetField = 'propertyNumber';
-    else if (idx === columnMap.areaIdx) targetField = 'areaSqft';
-    else if (idx === columnMap.facingIdx) targetField = 'facing';
-    else if (idx === columnMap.statusIdx) targetField = 'status';
-    else if (idx === columnMap.sectionIdx) targetField = 'sectionOrPhase';
-    else if (idx === columnMap.unitTypeIdx) targetField = 'unitType';
-    else if (idx === columnMap.plinthIdx) targetField = 'plinthArea';
-    else if (idx === columnMap.commonIdx) targetField = 'commonArea';
-    else if (idx === columnMap.udsIdx) targetField = 'uds';
-
-    return {
-      excelHeader: h || `Column ${idx + 1}`,
-      targetField,
-      colIndex: idx
-    };
-  });
+  // Detect column mapping with project-type intelligence and custom overrides
+  const { columnMap, candidates, hasMultipleCandidates, detectedMapping } = detectColumnMappings(
+    headers,
+    project.project_type,
+    customMapping
+  );
 
   if (columnMap.propNumberIdx === -1) {
-    throw new Error('Could not identify a property identifier column (e.g. "Plot No", "Flat No", "Unit") in header row.');
+    throw new Error('We couldn\'t confidently identify the property identifier column (e.g. "Plot No", "Flat No", "Unit") in header row. Please select the correct column.');
   }
 
   const previewRows: ImportPreviewRow[] = [];
@@ -261,7 +698,7 @@ export function generateImportPreview(
       previewRows.push({
         rowIndex: rIdx + 1,
         propertyNumber: propNumber,
-        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : 'PLOT',
+        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : (project.project_type === 'VILLA' ? 'VILLA' : 'PLOT'),
         status: statusVal,
         facing,
         areaSqft,
@@ -279,12 +716,12 @@ export function generateImportPreview(
     if (seenRowsMap.has(compoundKey)) {
       duplicateCount++;
       const prevRow = seenRowsMap.get(compoundKey)!;
-      const dupReason = `Duplicate of Row ${prevRow.rowIndex} in this spreadsheet: same plot identifier '${propNumber}'${sectionOrPhase ? ` in Section/Phase '${sectionOrPhase}'` : ''}.`;
+      const dupReason = `Duplicate of Row ${prevRow.rowIndex} in this spreadsheet: same property identifier '${propNumber}'${sectionOrPhase ? ` in Section/Phase '${sectionOrPhase}'` : ''}.`;
 
       previewRows.push({
         rowIndex: rIdx + 1,
         propertyNumber: propNumber,
-        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : 'PLOT',
+        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : (project.project_type === 'VILLA' ? 'VILLA' : 'PLOT'),
         status,
         facing,
         areaSqft,
@@ -319,7 +756,7 @@ export function generateImportPreview(
       previewRows.push({
         rowIndex: rIdx + 1,
         propertyNumber: propNumber,
-        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : 'PLOT',
+        propertyType: project.project_type === 'APARTMENT' ? 'APARTMENT' : (project.project_type === 'VILLA' ? 'VILLA' : 'PLOT'),
         status,
         facing,
         areaSqft,
@@ -480,8 +917,13 @@ export function generateImportPreview(
     projectId: targetProjectId,
     projectName: project.name,
     sheetName,
-    summary,
+    headerRowIndex: headerRowIdx + 1,
+    availableHeaders: headers.map((h, idx) => ({ header: h || `Column ${idx + 1}`, colIndex: idx })),
     detectedMapping,
+    identifierCandidates: candidates,
+    isIdentifierConfident: candidates.length > 0 && !hasMultipleCandidates,
+    hasMultipleCandidates,
+    summary,
     rows: previewRows
   };
 }
@@ -652,64 +1094,6 @@ export function applyImport(
     skippedCount, 
     message: `Successfully applied ${appliedCount} records from import${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}.` 
   };
-}
-
-function mapColumnIndices(headers: string[]) {
-  let propNumberIdx = -1;
-  let areaIdx = -1;
-  let facingIdx = -1;
-  let statusIdx = -1;
-  let sectionIdx = -1;
-  let plinthIdx = -1;
-  let commonIdx = -1;
-  let udsIdx = -1;
-  let floorIdx = -1;
-  let unitTypeIdx = -1;
-
-  headers.forEach((h, idx) => {
-    const clean = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (
-      clean.includes('plotno') ||
-      clean.includes('plotnumber') ||
-      clean.includes('flatno') ||
-      clean.includes('flatnumber') ||
-      clean.includes('flatname') ||
-      clean.includes('unitno') ||
-      clean.includes('unitnumber') ||
-      clean === 'plot' ||
-      clean === 'flat' ||
-      clean === 'unit'
-    ) {
-      propNumberIdx = idx;
-    } else if (
-      clean.includes('area') ||
-      clean.includes('sqft') ||
-      clean.includes('sqfeet') ||
-      clean.includes('extent') ||
-      clean.includes('totalsaleablearea') ||
-      clean.includes('saleablearea')
-    ) {
-      areaIdx = idx;
-    } else if (clean.includes('facing')) {
-      facingIdx = idx;
-    } else if (clean.includes('status') || clean.includes('staus') || clean.includes('stat')) {
-      statusIdx = idx;
-    } else if (clean.includes('phase') || clean.includes('section') || clean.includes('enclave') || clean.includes('block')) {
-      sectionIdx = idx;
-    } else if (clean.includes('plinth')) {
-      plinthIdx = idx;
-    } else if (clean.includes('common')) {
-      commonIdx = idx;
-    } else if (clean.includes('uds')) {
-      udsIdx = idx;
-    } else if (clean.includes('floor')) {
-      floorIdx = idx;
-    } else if (clean.includes('unittype') || clean.includes('type') || clean.includes('bhk')) {
-      unitTypeIdx = idx;
-    }
-  });
-
-  return { propNumberIdx, areaIdx, facingIdx, statusIdx, sectionIdx, plinthIdx, commonIdx, udsIdx, floorIdx, unitTypeIdx };
 }
 
 export function mapAndValidateStatus(val: string): { status: string; isValid: boolean; error?: string } {

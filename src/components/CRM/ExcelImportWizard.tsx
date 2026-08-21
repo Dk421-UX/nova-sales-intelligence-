@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Project } from '../../types/models.ts';
 import { api } from '../../services/api.ts';
-import { X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ArrowRight, Settings, Check, RefreshCw, Copy, Layers, Trash2 } from 'lucide-react';
+import { X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowRight, Settings, RefreshCw, Copy, HelpCircle, Check, Info } from 'lucide-react';
 
 interface ExcelImportWizardProps {
   project: Project;
@@ -19,7 +19,13 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
   const [selectedSheet, setSelectedSheet] = useState<string>('');
   const [preview, setPreview] = useState<any | null>(null);
   const [showMappingEditor, setShowMappingEditor] = useState(false);
-  const [customMapping, setCustomMapping] = useState<any>({});
+  const [customMapping, setCustomMapping] = useState<Record<string, number>>({});
+  const [availableHeaders, setAvailableHeaders] = useState<{ header: string; colIndex: number }[]>([]);
+  const [identifierCandidates, setIdentifierCandidates] = useState<any[]>([]);
+  const [headerRowIdx, setHeaderRowIdx] = useState<number>(1);
+  const [requiresManualMapping, setRequiresManualMapping] = useState(false);
+  const [manualMappingPrompt, setManualMappingPrompt] = useState('');
+  
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
   const [rowActions, setRowActions] = useState<Record<number, { action: 'SKIP' | 'SET_STATUS' | 'KEEP' | 'EXCLUDE'; status?: string }>>({});
 
@@ -34,6 +40,8 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
 
     setFile(selected);
     setErrorMsg('');
+    setRequiresManualMapping(false);
+    setManualMappingPrompt('');
     setIsLoading(true);
 
     try {
@@ -54,24 +62,72 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
     }
   };
 
-  const handleGeneratePreview = async (mappingOverrides?: any) => {
+  const handleGeneratePreview = async (mappingOverrides?: Record<string, number>) => {
     if (!file || !selectedSheet) return;
 
     setIsLoading(true);
     setErrorMsg('');
+
+    const mappingToUse = mappingOverrides !== undefined ? mappingOverrides : customMapping;
 
     try {
       const previewData = await api.generateExcelPreview(
         file, 
         project.id, 
         selectedSheet,
-        mappingOverrides !== undefined ? mappingOverrides : customMapping
+        Object.keys(mappingToUse).length > 0 ? mappingToUse : undefined
       );
+
       setPreview(previewData);
       setRowActions({});
+      setRequiresManualMapping(false);
+      setManualMappingPrompt('');
+
+      if (previewData.availableHeaders) {
+        setAvailableHeaders(previewData.availableHeaders);
+      }
+      if (previewData.identifierCandidates) {
+        setIdentifierCandidates(previewData.identifierCandidates);
+      }
+      if (previewData.headerRowIndex) {
+        setHeaderRowIdx(previewData.headerRowIndex);
+      }
+
+      // Initialize custom mapping state from detected mappings if not yet set
+      if (previewData.detectedMapping) {
+        const initialMap: Record<string, number> = {};
+        previewData.detectedMapping.forEach((m: any) => {
+          if (m.targetField && m.targetField !== 'unmapped') {
+            if (m.targetField === 'propertyNumber') initialMap.propNumberIdx = m.colIndex;
+            else if (m.targetField === 'areaSqft') initialMap.areaIdx = m.colIndex;
+            else if (m.targetField === 'facing') initialMap.facingIdx = m.colIndex;
+            else if (m.targetField === 'status') initialMap.statusIdx = m.colIndex;
+            else if (m.targetField === 'sectionOrPhase') initialMap.sectionIdx = m.colIndex;
+            else if (m.targetField === 'unitType') initialMap.unitTypeIdx = m.colIndex;
+            else if (m.targetField === 'plinthArea') initialMap.plinthIdx = m.colIndex;
+            else if (m.targetField === 'commonArea') initialMap.commonIdx = m.colIndex;
+            else if (m.targetField === 'uds') initialMap.udsIdx = m.colIndex;
+          }
+        });
+        setCustomMapping(prev => ({ ...initialMap, ...prev, ...(mappingOverrides || {}) }));
+      }
+
+      // If multiple identifier candidates detected, gently open editor for verification
+      if (previewData.hasMultipleCandidates) {
+        setShowMappingEditor(true);
+      }
+
       setStep(3);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to parse Excel rows.');
+      if (err.requiresMapping || err.availableHeaders?.length > 0 || err.message?.includes("couldn't confidently identify")) {
+        setRequiresManualMapping(true);
+        setManualMappingPrompt(err.message || "We couldn't confidently identify the property identifier column. Please select the correct column.");
+        if (err.availableHeaders) setAvailableHeaders(err.availableHeaders);
+        if (err.identifierCandidates) setIdentifierCandidates(err.identifierCandidates);
+        setErrorMsg('');
+      } else {
+        setErrorMsg(err.message || 'Failed to parse Excel rows.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -127,7 +183,7 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
             </div>
             <ArrowRight size={14} color="var(--text-muted)" />
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: step >= 2 ? 'var(--brand-gold)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>
-              <span>2. Select Sheet</span>
+              <span>2. Select Sheet & Column Mapping</span>
             </div>
             <ArrowRight size={14} color="var(--text-muted)" />
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: step >= 3 ? 'var(--brand-gold)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>
@@ -158,7 +214,7 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
             </div>
           )}
 
-          {/* STEP 2: Select Sheet */}
+          {/* STEP 2: Select Sheet & Initial Header Review */}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{ background: 'var(--bg-surface-raised)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
@@ -172,7 +228,11 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                 </label>
                 <select
                   value={selectedSheet}
-                  onChange={e => setSelectedSheet(e.target.value)}
+                  onChange={e => {
+                    setSelectedSheet(e.target.value);
+                    setRequiresManualMapping(false);
+                    setCustomMapping({});
+                  }}
                   style={{ width: '100%', padding: '0.75rem' }}
                 >
                   {sheets.map(s => (
@@ -181,11 +241,127 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                 </select>
               </div>
 
+              {/* Manual Mapping Card if automatic detection was uncertain or user needs to map */}
+              {requiresManualMapping && (
+                <div style={{ background: 'rgba(212, 175, 55, 0.08)', border: '1.5px solid rgba(212, 175, 55, 0.4)', borderRadius: 'var(--radius-md)', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                    <AlertCircle size={20} color="var(--brand-gold)" />
+                    <div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>
+                        Property Identifier Selection Required
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {manualMappingPrompt || "We couldn't confidently identify the property identifier column. Please select the correct column."}
+                      </div>
+                    </div>
+                  </div>
+
+                  {identifierCandidates.length > 0 && (
+                    <div style={{ marginBottom: '1rem', background: 'rgba(0,0,0,0.25)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-xs)' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--brand-gold)', fontWeight: 600, marginBottom: '0.4rem' }}>
+                        Detected Candidate Columns:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {identifierCandidates.map((c, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            className={`btn btn-sm ${customMapping.propNumberIdx === c.colIndex ? 'btn-primary' : 'btn-secondary'}`}
+                            style={{ fontSize: '0.78rem' }}
+                            onClick={() => setCustomMapping(prev => ({ ...prev, propNumberIdx: c.colIndex }))}
+                          >
+                            {c.isRecommended ? '★ ' : ''}{c.header} ({c.reason})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--brand-gold)', fontWeight: 700, marginBottom: '0.35rem' }}>
+                        Property Identifier (Plot / Flat / Unit #) *
+                      </label>
+                      <select
+                        value={customMapping.propNumberIdx !== undefined ? customMapping.propNumberIdx : ''}
+                        onChange={e => setCustomMapping(prev => ({ ...prev, propNumberIdx: parseInt(e.target.value, 10) }))}
+                        style={{ width: '100%', padding: '0.6rem' }}
+                      >
+                        <option value="">-- Choose Identifier Column --</option>
+                        {availableHeaders.map(h => (
+                          <option key={h.colIndex} value={h.colIndex}>
+                            Col {h.colIndex + 1}: {h.header}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#fff', fontWeight: 600, marginBottom: '0.35rem' }}>
+                        Status Column (Optional)
+                      </label>
+                      <select
+                        value={customMapping.statusIdx !== undefined ? customMapping.statusIdx : ''}
+                        onChange={e => setCustomMapping(prev => ({ ...prev, statusIdx: e.target.value === '' ? -1 : parseInt(e.target.value, 10) }))}
+                        style={{ width: '100%', padding: '0.6rem' }}
+                      >
+                        <option value="">Auto-Detect / Default (Available)</option>
+                        {availableHeaders.map(h => (
+                          <option key={h.colIndex} value={h.colIndex}>
+                            Col {h.colIndex + 1}: {h.header}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#fff', fontWeight: 600, marginBottom: '0.35rem' }}>
+                        Area / Sq.Ft Column (Optional)
+                      </label>
+                      <select
+                        value={customMapping.areaIdx !== undefined ? customMapping.areaIdx : ''}
+                        onChange={e => setCustomMapping(prev => ({ ...prev, areaIdx: e.target.value === '' ? -1 : parseInt(e.target.value, 10) }))}
+                        style={{ width: '100%', padding: '0.6rem' }}
+                      >
+                        <option value="">Auto-Detect</option>
+                        {availableHeaders.map(h => (
+                          <option key={h.colIndex} value={h.colIndex}>
+                            Col {h.colIndex + 1}: {h.header}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#fff', fontWeight: 600, marginBottom: '0.35rem' }}>
+                        Facing Column (Optional)
+                      </label>
+                      <select
+                        value={customMapping.facingIdx !== undefined ? customMapping.facingIdx : ''}
+                        onChange={e => setCustomMapping(prev => ({ ...prev, facingIdx: e.target.value === '' ? -1 : parseInt(e.target.value, 10) }))}
+                        style={{ width: '100%', padding: '0.6rem' }}
+                      >
+                        <option value="">Auto-Detect</option>
+                        {availableHeaders.map(h => (
+                          <option key={h.colIndex} value={h.colIndex}>
+                            Col {h.colIndex + 1}: {h.header}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(1)}>
                   Back
                 </button>
-                <button className="btn btn-primary" onClick={() => handleGeneratePreview()} disabled={isLoading || !selectedSheet}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => handleGeneratePreview()} 
+                  disabled={isLoading || !selectedSheet || (requiresManualMapping && customMapping.propNumberIdx === undefined)}
+                >
                   {isLoading ? 'Inspecting Rows...' : 'Generate Diff Preview'}
                 </button>
               </div>
@@ -195,31 +371,186 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
           {/* STEP 3: Preview & Apply */}
           {step === 3 && preview && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Column Mapping Preview Banner */}
+              {/* Column Mapping Preview & Interactive Mapping Editor */}
               <div style={{ background: 'var(--bg-surface-raised)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '0.85rem 1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
-                    Detected Column Mapping ({preview.detectedMapping?.length || 0} columns)
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff' }}>
+                      Column Mapping (Header Row {preview.headerRowIndex || headerRowIdx || 1})
+                    </span>
+                    {preview.isIdentifierConfident && (
+                      <span className="badge badge-available" style={{ fontSize: '0.68rem' }}>
+                        ✓ Identifier Detected
+                      </span>
+                    )}
+                    {preview.hasMultipleCandidates && (
+                      <span className="badge badge-booked" style={{ fontSize: '0.68rem' }}>
+                        Multiple Candidates Detected
+                      </span>
+                    )}
                   </div>
                   <button 
                     className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
                     onClick={() => setShowMappingEditor(!showMappingEditor)}
                   >
-                    <Settings size={12} /> {showMappingEditor ? 'Hide Mapping' : 'Review / Edit Mapping'}
+                    <Settings size={12} /> {showMappingEditor ? 'Hide Mapping Editor' : 'Review / Edit Mapping'}
                   </button>
                 </div>
 
+                {/* Expanded Interactive Mapping Editor */}
                 {showMappingEditor ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle)' }}>
-                    {preview.detectedMapping?.map((m: any, idx: number) => (
-                      <div key={idx} style={{ background: 'var(--bg-surface)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--brand-gold)', fontWeight: 600 }}>Excel: "{m.excelHeader}"</div>
-                        <div style={{ fontSize: '0.8rem', color: '#fff', marginTop: '0.2rem' }}>
-                          Target Field: <strong>{m.targetField}</strong>
+                  <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {identifierCandidates.length > 0 && (
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.6rem 0.85rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--brand-gold)', fontWeight: 600, marginBottom: '0.3rem' }}>
+                          Detected Property Identifier Candidates:
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {identifierCandidates.map((c, idx) => (
+                            <span 
+                              key={idx}
+                              style={{ 
+                                fontSize: '0.72rem', 
+                                padding: '0.2rem 0.5rem', 
+                                borderRadius: '3px',
+                                background: customMapping.propNumberIdx === c.colIndex ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.06)',
+                                border: `1px solid ${customMapping.propNumberIdx === c.colIndex ? 'var(--status-available)' : 'var(--border-subtle)'}`,
+                                color: customMapping.propNumberIdx === c.colIndex ? 'var(--status-available)' : '#fff'
+                              }}
+                            >
+                              <strong>{c.header}</strong> (Col {c.colIndex + 1}) — {c.reason} {c.isRecommended ? '★ Recommended' : ''}
+                            </span>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                      {/* Property Identifier Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--brand-gold)', fontWeight: 700, marginBottom: '0.25rem' }}>
+                          Property Identifier *
+                        </label>
+                        <select
+                          value={customMapping.propNumberIdx !== undefined ? customMapping.propNumberIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'propertyNumber')?.colIndex ?? '')}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, propNumberIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Status Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Status
+                        </label>
+                        <select
+                          value={customMapping.statusIdx !== undefined ? customMapping.statusIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'status')?.colIndex ?? -1)}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, statusIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          <option value="-1">None (Default Available)</option>
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Area Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Area (sq.ft)
+                        </label>
+                        <select
+                          value={customMapping.areaIdx !== undefined ? customMapping.areaIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'areaSqft')?.colIndex ?? -1)}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, areaIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          <option value="-1">None</option>
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Facing Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Facing
+                        </label>
+                        <select
+                          value={customMapping.facingIdx !== undefined ? customMapping.facingIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'facing')?.colIndex ?? -1)}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, facingIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          <option value="-1">None</option>
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Section / Phase Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Phase / Section
+                        </label>
+                        <select
+                          value={customMapping.sectionIdx !== undefined ? customMapping.sectionIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'sectionOrPhase')?.colIndex ?? -1)}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, sectionIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          <option value="-1">None</option>
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Unit Type Dropdown */}
+                      <div style={{ background: 'var(--bg-surface)', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          Unit Type / BHK
+                        </label>
+                        <select
+                          value={customMapping.unitTypeIdx !== undefined ? customMapping.unitTypeIdx : (preview.detectedMapping?.find((m: any) => m.targetField === 'unitType')?.colIndex ?? -1)}
+                          onChange={e => setCustomMapping(prev => ({ ...prev, unitTypeIdx: parseInt(e.target.value, 10) }))}
+                          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                        >
+                          <option value="-1">None</option>
+                          {(preview.availableHeaders || availableHeaders).map((h: any) => (
+                            <option key={h.colIndex} value={h.colIndex}>
+                              Col {h.colIndex + 1}: {h.header}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: '0.78rem' }}
+                        onClick={() => handleGeneratePreview(customMapping)}
+                        disabled={isLoading}
+                      >
+                        <RefreshCw size={12} /> {isLoading ? 'Updating Preview...' : 'Update Mapping & Refresh Preview'}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', fontSize: '0.75rem' }}>
@@ -531,7 +862,7 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                               <span 
                                 className="badge"
                                 style={{
-                                  display: 'inline-block',
+                                   display: 'inline-block',
                                   width: 'fit-content',
                                   background: isDuplicateKept 
                                     ? 'rgba(16, 185, 129, 0.25)'
