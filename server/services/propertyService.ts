@@ -1,5 +1,6 @@
 import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
+import { syncEntityToSupabase, deleteEntityFromSupabase, syncBatchToSupabase } from '../db/supabaseSync.ts';
 
 export interface PropertyFilter {
   projectId?: string;
@@ -381,9 +382,7 @@ export function createProperty(data: any, userId: string, userRole: string): Pro
 
   const createdProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
   if (createdProp) {
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('properties', createdProp).catch(() => {});
-    }).catch(() => {});
+    syncEntityToSupabase('properties', createdProp).catch(() => {});
   }
 
   return getPropertyById(id, true)!;
@@ -459,13 +458,12 @@ export function updateProperty(id: string, updates: any, userId: string, userRol
 
   const updatedProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
   if (updatedProp) {
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('properties', updatedProp).catch(() => {});
-    }).catch(() => {});
+    syncEntityToSupabase('properties', updatedProp).catch(() => {});
   }
 
   return getPropertyById(id, true)!;
 }
+
 
 export function stageStatusUpdate(id: string, newStatus: string, userId: string, userRole: string): PropertyDto {
   return updateProperty(id, { status: newStatus }, userId, userRole, true);
@@ -493,6 +491,11 @@ export function archiveProperty(id: string, reason: string, userId: string, user
     performed_by: userId,
     user_role: userRole
   });
+
+  const archivedProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
+  if (archivedProp) {
+    syncEntityToSupabase('properties', archivedProp).catch(() => {});
+  }
 
   return true;
 }
@@ -577,5 +580,11 @@ export function savePropertyGeometry(propertyId: string, layoutId: string, geome
     user_role: userRole
   });
 
+  const savedGeom = db.prepare('SELECT * FROM property_geometry WHERE id = ?').get(id) as any;
+  if (savedGeom) {
+    syncEntityToSupabase('property_geometry', savedGeom).catch(() => {});
+  }
+
   return { success: true, geometryId: id };
 }
+

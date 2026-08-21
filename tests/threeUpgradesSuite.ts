@@ -150,7 +150,7 @@ async function runThreeUpgradesSuite() {
   assert(invalidRow !== undefined, 'Unsupported status "Clubhouse Zone" identified as INVALID');
 
   // Test applyImport with review actions: KEEP legitimate duplicate and skip invalid
-  const applyResult = applyImport(
+  const applyResult = await applyImport(
     preview.importId,
     'admin_1',
     'ADMIN',
@@ -158,6 +158,7 @@ async function runThreeUpgradesSuite() {
       skipInvalid: true,
       rowActions: {
         [dupRow!.rowIndex]: { action: 'KEEP' } // CRM explicitly chooses to keep this unit
+
       }
     }
   );

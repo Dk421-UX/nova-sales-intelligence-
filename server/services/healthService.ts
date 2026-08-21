@@ -1,17 +1,26 @@
 import { getDb } from '../db/database.ts';
 import { getSupabase, getSupabaseAdmin, isSupabaseConfigured } from '../db/supabaseClient.ts';
+import { checkStorageHealth } from './storageService.ts';
 import { config } from '../config.ts';
 
 export interface HealthReport {
   status: 'healthy' | 'degraded' | 'error';
   timestamp: string;
   database: {
-    provider: 'supabase' | 'local-relational';
+    provider: 'SUPABASE' | 'SQLITE';
     connected: boolean;
     error?: string;
     supabaseConfigured: boolean;
     supabaseReachable: boolean;
     supabaseTablesReady: boolean;
+    schemaHealthy: boolean;
+    sqliteProductionFallback: boolean;
+  };
+  storage: {
+    configured: boolean;
+    healthy: boolean;
+    bucket: string;
+    error?: string;
   };
   inventory: {
     projectCount: number;
@@ -54,7 +63,7 @@ export async function getSystemHealth(): Promise<HealthReport> {
     dbError = err.message;
   }
 
-  // Check Supabase reachability
+  // Check Supabase reachability & schema
   let supabaseReachable = false;
   let supabaseTablesReady = false;
   const supaClient = getSupabaseAdmin() || getSupabase();
@@ -67,26 +76,37 @@ export async function getSystemHealth(): Promise<HealthReport> {
         supabaseTablesReady = true;
       } else if (error.code === 'PGRST205' || error.message.includes('Could not find the table')) {
         supabaseReachable = true;
-        supabaseTablesReady = false; // Supabase project exists but schema DDL not yet executed in Postgres
+        supabaseTablesReady = false;
       }
     } catch (e) {
       supabaseReachable = false;
     }
   }
 
+  const storageHealth = await checkStorageHealth();
+  const isProd = config.nodeEnv === 'production';
+  const isSupabaseActive = isSupabaseConfigured() && supabaseTablesReady;
+
+  // In production, if Supabase is not connected or tables not ready, state is error
+  const sqliteFallbackInProd = isProd && !isSupabaseActive;
+  const isHealthy = dbConnected && (isProd ? (isSupabaseActive && storageHealth.healthy) : true);
+
   const aiConfigured = Boolean(config.aiApiKey);
 
   return {
-    status: dbConnected ? (publishedPropertyCount > 0 ? 'healthy' : 'degraded') : 'error',
+    status: isHealthy ? (publishedPropertyCount > 0 ? 'healthy' : 'degraded') : 'error',
     timestamp: new Date().toISOString(),
     database: {
-      provider: isSupabaseConfigured() && supabaseTablesReady ? 'supabase' : 'local-relational',
-      connected: dbConnected,
+      provider: isSupabaseActive ? 'SUPABASE' : 'SQLITE',
+      connected: dbConnected && (isProd ? supabaseReachable : true),
       error: dbError,
       supabaseConfigured: isSupabaseConfigured(),
       supabaseReachable,
-      supabaseTablesReady
+      supabaseTablesReady,
+      schemaHealthy: supabaseTablesReady,
+      sqliteProductionFallback: sqliteFallbackInProd
     },
+    storage: storageHealth,
     inventory: {
       projectCount,
       publishedPropertyCount,
@@ -105,3 +125,4 @@ export async function getSystemHealth(): Promise<HealthReport> {
     }
   };
 }
+

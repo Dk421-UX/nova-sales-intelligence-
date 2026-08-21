@@ -4,6 +4,7 @@ import { config } from '../config.ts';
 import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
 import { calculateFreshness, FreshnessInfo } from './freshnessService.ts';
+import { syncEntityToSupabase, deleteEntityFromSupabase, syncBatchToSupabase } from '../db/supabaseSync.ts';
 
 export interface ProjectDto {
   id: string;
@@ -214,14 +215,18 @@ export function uploadProjectLayout(
   });
 
   transaction();
+
+  try {
+    const allProjectLayouts = db.prepare('SELECT * FROM layouts WHERE project_id = ?').all(targetProjectId) as any[];
+    if (allProjectLayouts.length > 0) {
+      syncBatchToSupabase('layouts', allProjectLayouts).catch(() => {});
+    }
+  } catch (e) {}
+
   const createdLayout = db.prepare('SELECT * FROM layouts WHERE id = ?').get(layoutId) as any;
-  if (createdLayout) {
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('layouts', createdLayout).catch(() => {});
-    }).catch(() => {});
-  }
   return createdLayout;
 }
+
 
 export function getProjectBuildings(projectId: string) {
   const db = getDb();
@@ -254,10 +259,13 @@ export function createProject(
     total_area_reference?: string;
     total_units_reference?: number;
     cover_image?: string;
+    brochure_reference?: string;
+    official_url?: string;
   },
   userId: string,
   userRole: string
 ) {
+
   const db = getDb();
   const name = String(data.name || '').trim();
   if (!name) throw new Error('Project name is required.');
@@ -289,8 +297,6 @@ export function createProject(
   const now = new Date().toISOString();
   const highlights = JSON.stringify(data.highlights || []);
   const amenities = JSON.stringify(data.amenities || []);
-  const status = data.status || 'ACTIVE';
-  const isPublished = data.is_published !== undefined ? (data.is_published ? 1 : 0) : 1;
 
   db.prepare(`
     INSERT INTO projects (
@@ -299,27 +305,26 @@ export function createProject(
       cover_image, status, current_version, is_published, last_verified_at, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
   `).run(
-    id, slug, name, projectType, location, city, data.description || null,
+    id, slug, data.name, data.project_type, data.location, data.city, data.description || null,
     highlights, amenities, data.total_area_reference || null, data.total_units_reference || null,
-    data.cover_image || null, status, isPublished, now, now, now
+    data.cover_image || null, data.status || 'ACTIVE', data.is_published ? 1 : 0, now, now, now
   );
+
+  const insertedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (insertedProject) {
+    syncEntityToSupabase('projects', insertedProject).catch(() => {});
+  }
+
 
   recordAuditLog({
     entity_type: 'PROJECT',
     entity_id: id,
     project_id: id,
     action: 'CREATE',
-    new_values: { name, slug, projectType, location, city, status },
+    new_values: data,
     performed_by: userId,
     user_role: userRole
   });
-
-  const insertedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
-  if (insertedProject) {
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('projects', insertedProject).catch(() => {});
-    }).catch(() => {});
-  }
 
   return getProjectById(id, true);
 }
@@ -345,6 +350,11 @@ export function updateProject(id: string, updates: Partial<ProjectDto>, userId: 
     WHERE id = ?
   `).run(updatedName, updatedLocation, updatedCity, updatedDescription, updatedHighlights, updatedAmenities, updatedStatus, updatedPublished, now, id);
 
+  const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (updatedProject) {
+    syncEntityToSupabase('projects', updatedProject).catch(() => {});
+  }
+
   recordAuditLog({
     entity_type: 'PROJECT',
     entity_id: id,
@@ -355,13 +365,6 @@ export function updateProject(id: string, updates: Partial<ProjectDto>, userId: 
     performed_by: userId,
     user_role: userRole
   });
-
-  const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
-  if (updatedProject) {
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('projects', updatedProject).catch(() => {});
-    }).catch(() => {});
-  }
 
   return getProjectById(id, true);
 }
@@ -393,14 +396,22 @@ export function deleteProject(id: string, userId: string, userRole: string) {
     });
   });
 
-  transaction();
-
-  import('../db/supabaseSync.ts').then(({ deleteEntityFromSupabase }) => {
-    deleteEntityFromSupabase('projects', id).catch(() => {});
+  // Cascade deletion in Supabase
+  import('../db/supabaseClient.ts').then(async ({ getSupabaseAdmin }) => {
+    const supa = getSupabaseAdmin();
+    if (supa) {
+      try {
+        await supa.from('property_geometry').delete().eq('property_id', id);
+        await supa.from('properties').delete().eq('project_id', id);
+        await supa.from('layouts').delete().eq('project_id', id);
+        await supa.from('projects').delete().eq('id', id);
+      } catch (e) {}
+    }
   }).catch(() => {});
 
   return { success: true, message: `Project '${existing.name}' and all associated inventory and layouts were successfully deleted.` };
 }
+
 
 export function reconfigureProjectType(id: string, newType: 'PLOT' | 'APARTMENT' | 'COMMERCIAL', reason: string, userId: string, userRole: string) {
   const db = getDb();
@@ -451,8 +462,17 @@ export function reconfigureProjectType(id: string, newType: 'PLOT' | 'APARTMENT'
   });
 
   transaction();
+
+  try {
+    const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+    if (updatedProject) syncEntityToSupabase('projects', updatedProject).catch(() => {});
+    const newVer = db.prepare('SELECT * FROM project_versions WHERE id = ?').get(`ver_${id}_${newVersion}`);
+    if (newVer) syncEntityToSupabase('project_versions', newVer).catch(() => {});
+  } catch (e) {}
+
   return getProjectById(id, true);
 }
+
 
 export function getProjectVersions(projectId: string) {
   const db = getDb();
@@ -632,6 +652,14 @@ export function publishLayout(layoutId: string, userId: string, userRole: string
   });
 
   transaction();
+
+  try {
+    const allProjectLayouts = db.prepare('SELECT * FROM layouts WHERE project_id = ?').all(layout.project_id) as any[];
+    if (allProjectLayouts.length > 0) {
+      syncBatchToSupabase('layouts', allProjectLayouts).catch(() => {});
+    }
+  } catch (e) {}
+
   return getProjectLayout(layout.project_id);
 }
 
@@ -680,5 +708,9 @@ export function deleteLayout(layoutId: string, userId: string, userRole: string)
   });
 
   transaction();
+
+  deleteEntityFromSupabase('layouts', layoutId).catch(() => {});
+
   return { success: true, message: `Layout '${layout.name}' successfully deleted.` };
 }
+

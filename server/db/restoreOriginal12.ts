@@ -31,23 +31,9 @@ export async function restoreAndVerifyOriginal12() {
   const { data: allProjects, error: fetchErr } = await supabase.from('projects').select('*');
   if (fetchErr) throw fetchErr;
 
+  // 2. Report project inventory safely without destructive pruning
   console.log(`Current projects in Supabase: ${allProjects?.length}`);
 
-  // 2. Identify test / duplicate projects to remove cleanly
-  const testProjects = (allProjects || []).filter(p => !original12Ids.includes(p.id));
-  if (testProjects.length > 0) {
-    console.log(`Removing ${testProjects.length} test / duplicate project records:`, testProjects.map(p => `${p.id} (${p.name})`));
-    for (const tp of testProjects) {
-      // Clean up child records first
-      await supabase.from('property_geometry').delete().eq('property_id', tp.id);
-      await supabase.from('properties').delete().eq('project_id', tp.id);
-      await supabase.from('layouts').delete().eq('project_id', tp.id);
-      await supabase.from('project_versions').delete().eq('project_id', tp.id);
-      await supabase.from('audit_logs').delete().eq('project_id', tp.id);
-      await supabase.from('buildings').delete().eq('project_id', tp.id);
-      await supabase.from('projects').delete().eq('id', tp.id);
-    }
-  }
 
   // 3. Verify exactly 12 projects in Supabase
   const { data: finalProjects, error: finalErr } = await supabase

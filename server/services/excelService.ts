@@ -1,6 +1,7 @@
 import * as xlsx from 'xlsx';
 import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
+import { syncEntityToSupabase, syncBatchToSupabase } from '../db/supabaseSync.ts';
 
 export const SUPPORTED_STATUSES = ['AVAILABLE', 'BOOKED', 'REGISTERED', 'SOLD', 'RESERVED', 'BLOCKED'] as const;
 export type PropertyStatus = typeof SUPPORTED_STATUSES[number];
@@ -912,6 +913,18 @@ export function generateImportPreview(
 
   transaction();
 
+  // Async sync preview metadata to Supabase
+  try {
+    const createdImport = db.prepare('SELECT * FROM imports WHERE id = ?').get(importId);
+    if (createdImport) {
+      syncEntityToSupabase('imports', createdImport).catch(() => {});
+    }
+    const createdImportRows = db.prepare('SELECT * FROM import_rows WHERE import_id = ?').all(importId);
+    if (createdImportRows && createdImportRows.length > 0) {
+      syncBatchToSupabase('import_rows', createdImportRows).catch(() => {});
+    }
+  } catch (e) {}
+
   return {
     importId,
     projectId: targetProjectId,
@@ -928,7 +941,7 @@ export function generateImportPreview(
   };
 }
 
-export function applyImport(
+export async function applyImport(
   importId: string,
   userId: string,
   userRole: string,
@@ -1088,6 +1101,25 @@ export function applyImport(
   });
 
   transaction();
+
+  // Authoritative Supabase persistence: push all active properties of this project to Supabase
+  try {
+    const allProjectProps = db.prepare('SELECT * FROM properties WHERE project_id = ? AND is_archived = 0 AND is_superseded = 0').all(projectId) as any[];
+    if (allProjectProps.length > 0) {
+      await syncBatchToSupabase('properties', allProjectProps);
+    }
+    const updatedImport = db.prepare('SELECT * FROM imports WHERE id = ?').get(importId);
+    if (updatedImport) {
+      await syncEntityToSupabase('imports', updatedImport);
+    }
+    const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (updatedProject) {
+      await syncEntityToSupabase('projects', updatedProject);
+    }
+  } catch (syncErr: any) {
+    console.warn('[ExcelService] Note on Supabase sync after apply:', syncErr.message);
+  }
+
   return { 
     success: true,
     appliedCount, 
@@ -1095,6 +1127,8 @@ export function applyImport(
     message: `Successfully applied ${appliedCount} records from import${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}.` 
   };
 }
+
+
 
 export function mapAndValidateStatus(val: string): { status: string; isValid: boolean; error?: string } {
   const raw = (val || '').toUpperCase().trim();

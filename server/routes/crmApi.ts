@@ -17,6 +17,7 @@ import { parseExcelSheets, generateImportPreview, applyImport, inspectSheetStruc
 import { getAuditLogs } from '../services/auditService.ts';
 import { officialWebsiteService } from '../services/officialWebsiteService.ts';
 import { layoutAnalysisService } from '../services/layoutAnalysisService.ts';
+import { uploadLayoutToStorage } from '../services/storageService.ts';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -210,7 +211,7 @@ crmRouter.get('/projects/:id/layouts', authenticateToken, (req: AuthRequest, res
 });
 
 // Layout Upload & Publishing Route
-crmRouter.post('/projects/:id/layout', authenticateToken, requireRole(['ADMIN', 'CRM_STAFF']), upload.single('file'), (req: AuthRequest, res: Response) => {
+crmRouter.post('/projects/:id/layout', authenticateToken, requireRole(['ADMIN', 'CRM_STAFF']), upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     const projectId = req.params.id as string;
     const { name, layoutType, status, isDraft } = req.body;
@@ -228,31 +229,40 @@ crmRouter.post('/projects/:id/layout', authenticateToken, requireRole(['ADMIN', 
         return res.status(400).json({ error: 'Unsupported file format. Supported formats: PDF, JPG, JPEG, PNG, SVG.' });
       }
 
-      const persistentLayoutsDir = path.join(config.uploadsDir, 'layouts');
-      const publicLayoutsDir = path.join(process.cwd(), 'public', 'layouts');
-
-      if (!fs.existsSync(persistentLayoutsDir)) {
-        fs.mkdirSync(persistentLayoutsDir, { recursive: true });
-      }
-      if (!fs.existsSync(publicLayoutsDir)) {
-        fs.mkdirSync(publicLayoutsDir, { recursive: true });
-      }
-
       if (ext === '.svg') {
         svgContent = req.file.buffer.toString('utf-8');
+      }
+
+      // Upload layout directly to authoritative Supabase Storage
+      const storageResult = await uploadLayoutToStorage(
+        projectId,
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      if (storageResult.success && storageResult.publicUrl) {
+        imageUrl = storageResult.publicUrl;
       } else {
+        // Fallback to local copy only in local dev if Supabase is unavailable
+        const persistentLayoutsDir = path.join(config.uploadsDir, 'layouts');
+        const publicLayoutsDir = path.join(process.cwd(), 'public', 'layouts');
+
+        if (!fs.existsSync(persistentLayoutsDir)) fs.mkdirSync(persistentLayoutsDir, { recursive: true });
+        if (!fs.existsSync(publicLayoutsDir)) fs.mkdirSync(publicLayoutsDir, { recursive: true });
+
         const safeFilename = `${projectId.replace(/[^a-zA-Z0-9]/g, '_')}_layout_${Date.now()}${ext}`;
         const persistentPath = path.join(persistentLayoutsDir, safeFilename);
         const publicPath = path.join(publicLayoutsDir, safeFilename);
 
         fs.writeFileSync(persistentPath, req.file.buffer);
-        try {
-          fs.writeFileSync(publicPath, req.file.buffer);
-        } catch (e) {
-          // public write non-fatal if persistent write succeeded
-        }
-
+        try { fs.writeFileSync(publicPath, req.file.buffer); } catch (e) {}
         imageUrl = `/layouts/${safeFilename}`;
+
+        if (config.nodeEnv === 'production') {
+          console.error('[Layout Upload Error] Supabase Storage upload failed:', storageResult.error);
+          return res.status(500).json({ error: `Supabase Storage upload failed: ${storageResult.error}` });
+        }
       }
     }
 
@@ -285,6 +295,7 @@ crmRouter.post('/projects/:id/layout', authenticateToken, requireRole(['ADMIN', 
     res.status(500).json({ error: err.message || 'Failed to upload project layout.' });
   }
 });
+
 
 crmRouter.post('/projects/:id/layouts/:layoutId/publish', authenticateToken, requireRole(['ADMIN', 'CRM_STAFF']), (req: AuthRequest, res: Response) => {
   try {
@@ -496,11 +507,11 @@ crmRouter.post('/excel/preview', authenticateToken, upload.single('file'), (req:
   }
 });
 
-crmRouter.post('/excel/apply', authenticateToken, (req: AuthRequest, res: Response) => {
+crmRouter.post('/excel/apply', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { importId, skipInvalid, rowActions } = req.body;
     if (!importId) return res.status(400).json({ error: 'importId is required.' });
-    const result = applyImport(importId, req.user!.id, req.user!.role, {
+    const result = await applyImport(importId, req.user!.id, req.user!.role, {
       skipInvalid: Boolean(skipInvalid),
       rowActions: rowActions || undefined
     });
@@ -509,6 +520,7 @@ crmRouter.post('/excel/apply', authenticateToken, (req: AuthRequest, res: Respon
     res.status(400).json({ error: err.message || 'Failed to apply import.' });
   }
 });
+
 
 // ==========================================
 // AUDIT LOGS

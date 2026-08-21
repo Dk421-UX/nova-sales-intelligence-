@@ -1,4 +1,5 @@
 import { getDb } from '../db/database.ts';
+import { syncEntityToSupabase } from '../db/supabaseSync.ts';
 
 export interface AuditLogEntry {
   entity_type: 'PROPERTY' | 'PROJECT' | 'LAYOUT' | 'IMPORT' | 'PUBLISH' | 'CONFIG';
@@ -60,9 +61,8 @@ export function recordAuditLog(entry: AuditLogEntry) {
     );
 
     // Asynchronously sync audit entry to Supabase PostgreSQL
-    import('../db/supabaseSync.ts').then(({ syncEntityToSupabase }) => {
-      syncEntityToSupabase('audit_logs', auditPayload).catch(() => {});
-    }).catch(() => {});
+    syncEntityToSupabase('audit_logs', auditPayload).catch(() => {});
+
   } catch (err) {
     console.error('[AuditService] Failed to record audit log:', err);
     throw err;

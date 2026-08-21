@@ -185,7 +185,7 @@ async function runSuite() {
   let applySucceeded = false;
   let applyResult: any = null;
   try {
-    applyResult = applyImport(cleanPreview.importId, 'usr_admin', 'ADMIN');
+    applyResult = await applyImport(cleanPreview.importId, 'usr_admin', 'ADMIN');
     applySucceeded = true;
   } catch (err: any) {
     console.error('applyImport error:', err);
@@ -193,6 +193,7 @@ async function runSuite() {
   }
   assert(applySucceeded === true, 'applyImport executes and commits without "no such column: APPLIED" SQL error');
   assert(applyResult?.appliedCount >= 2, `applyImport applied ${applyResult?.appliedCount} records successfully`);
+
 
   // Verify database state after apply
   const updatedPlot101 = getPropertyById(plot101.id, false);

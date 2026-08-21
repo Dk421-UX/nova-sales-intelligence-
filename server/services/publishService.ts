@@ -1,5 +1,6 @@
 import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
+import { syncEntityToSupabase, syncBatchToSupabase } from '../db/supabaseSync.ts';
 
 export function getPendingDrafts(projectId?: string) {
   const db = getDb();
@@ -79,6 +80,21 @@ export function publishProjectDrafts(projectId: string, userId: string, userRole
   });
 
   transaction();
+
+  // Authoritative Supabase persistence
+  try {
+    const updatedProps = db.prepare(`
+      SELECT * FROM properties WHERE project_id = ? AND is_archived = 0
+    `).all(projectId) as any[];
+    if (updatedProps.length > 0) {
+      syncBatchToSupabase('properties', updatedProps).catch(() => {});
+    }
+    const updatedProject = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (updatedProject) {
+      syncEntityToSupabase('projects', updatedProject).catch(() => {});
+    }
+  } catch (e) {}
+
   return { publishedCount: pendingProps.length, message: `Successfully published ${pendingProps.length} inventory updates to live site.` };
 }
 
@@ -102,5 +118,15 @@ export function discardDraftChanges(projectId: string, userId: string, userRole:
     user_role: userRole
   });
 
+  try {
+    const updatedProps = db.prepare(`
+      SELECT * FROM properties WHERE project_id = ? AND is_archived = 0
+    `).all(projectId) as any[];
+    if (updatedProps.length > 0) {
+      syncBatchToSupabase('properties', updatedProps).catch(() => {});
+    }
+  } catch (e) {}
+
   return { discardedCount: count.changes };
 }
+

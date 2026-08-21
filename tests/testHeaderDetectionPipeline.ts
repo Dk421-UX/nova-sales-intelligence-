@@ -166,9 +166,10 @@ async function runHeaderDetectionSuite() {
   assert(preview.detectedMapping.find((m: any) => m.targetField === 'status')?.colIndex === 4, 'NOVA NCR: Status mapped as status (Col 5)');
 
   // 2. Apply Import
-  const applyResult = applyImport(preview.importId, 'usr_admin', 'ADMIN');
+  const applyResult = await applyImport(preview.importId, 'usr_admin', 'ADMIN');
   assert(applyResult.success === true, 'NOVA NCR: Import applied successfully');
   assert(applyResult.appliedCount >= 3, `NOVA NCR: Applied ${applyResult.appliedCount} records to database`);
+
 
   // Verify DB state
   const ncrProps = db.prepare('SELECT * FROM properties WHERE project_id = ? AND is_archived = 0').all('proj_nova_ncr') as any[];
