@@ -9,6 +9,7 @@ import { runMigrations } from './db/migrations.ts';
 import { seedDatabase } from './db/seed.ts';
 import { validateEnvironment, printStartupStatus } from './utils/envValidator.ts';
 import { getSystemHealth } from './services/healthService.ts';
+import { isSupabaseConfigured } from './db/supabaseClient.ts';
 import { publicRouter } from './routes/publicApi.ts';
 import { crmRouter } from './routes/crmApi.ts';
 import { aiRouter } from './routes/aiApi.ts';
@@ -49,19 +50,32 @@ app.use('/uploads', express.static(persistentUploadsDir));
 app.use('/layouts', express.static(persistentLayoutsDir));
 app.use('/layouts', express.static(publicLayoutsDir));
 
-// Initialize Database & Run Non-Destructive Migrations
+// Initialize Database & Startup Safety Check
 try {
-  const db = getDb();
-  runMigrations(db);
+  if (config.nodeEnv === 'production') {
+    if (!isSupabaseConfigured()) {
+      const errMsg = '[Startup FATAL] Production mode requires Supabase PostgreSQL. SUPABASE_URL and Service/Anon keys are missing.';
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
+    console.log('[Startup] Production Database: Supabase PostgreSQL is the permanent authoritative source of truth. Auto-seeding is disabled.');
+  } else {
+    // Local Development Mode
+    const db = getDb();
+    runMigrations(db);
 
-  // Initialize baseline project catalog only if projects table is completely uninitialized
-  const projectCountRow = db.prepare('SELECT COUNT(*) as count FROM projects').get() as any;
-  if (!projectCountRow || projectCountRow.count === 0) {
-    console.log('[Startup] Projects catalog is empty. Initializing baseline project catalog...');
-    seedDatabase();
+    // Initialize baseline project catalog ONLY in local development if projects table is completely uninitialized
+    const projectCountRow = db.prepare('SELECT COUNT(*) as count FROM projects').get() as any;
+    if (!projectCountRow || projectCountRow.count === 0) {
+      console.log('[Startup] Local projects catalog is empty. Initializing baseline project catalog in local dev...');
+      seedDatabase();
+    }
   }
 } catch (e: any) {
-  console.warn('[Startup] Database initialization / catalog check exception:', e.message);
+  console.error('[Startup] Database initialization exception:', e.message);
+  if (config.nodeEnv === 'production') {
+    throw e;
+  }
 }
 
 // Dynamic Health check endpoint

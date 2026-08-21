@@ -1,8 +1,6 @@
 -- Canonical SQL Schema for Nova Property Explorer
 -- Enforces data integrity, foreign keys, uniqueness, versioning, audit logging, and draft/published state
 
-PRAGMA foreign_keys = ON;
-
 -- 1. USERS & AUTHENTICATION
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
