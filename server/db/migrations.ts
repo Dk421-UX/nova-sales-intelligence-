@@ -131,4 +131,20 @@ export function runMigrations(db: DatabaseType = getDb()) {
     insertMigration.run(7, '007_multiphase_property_compound_unique_index', new Date().toISOString());
     console.log('[Migration] Applied: 007_multiphase_property_compound_unique_index');
   }
+
+  // Migration 8: Update Nova Hi-Tech location from Coimbatore to Chennai
+  if (!appliedVersions.has(8)) {
+    try {
+      db.prepare(`
+        UPDATE projects SET city = 'Chennai', updated_at = ?
+        WHERE id = 'proj_nova_hi_tech' OR slug = 'nova-hi-tech'
+      `).run(new Date().toISOString());
+    } catch (e) {
+      console.warn('[Migration 8 Warning]:', e);
+    }
+
+    const insertMigration = db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+    insertMigration.run(8, '008_update_nova_hi_tech_location_to_chennai', new Date().toISOString());
+    console.log('[Migration] Applied: 008_update_nova_hi_tech_location_to_chennai');
+  }
 }

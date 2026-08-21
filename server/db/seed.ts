@@ -398,7 +398,7 @@ export function seedDatabase() {
       'Nova Hi-Tech',
       'PLOT',
       'Tech Corridor',
-      'Coimbatore',
+      'Chennai',
       'Nova Hi-Tech features large premium commercial and residential plots (PP:1 to PP:4) facing South, ideally suited for bespoke bungalows or tech offices.',
       JSON.stringify(['Large Plot Extents (1,730 to 3,726 sq.ft)', 'South Facing Advantages', 'IT Corridor Proximity']),
       JSON.stringify(['Wide Access Roads', 'High Voltage Power Lines', 'Underground Drainage']),
