@@ -5,6 +5,8 @@ import { getProperties, getPropertyById } from '../server/services/propertyServi
 import path from 'path';
 import fs from 'fs';
 
+import os from 'os';
+
 let passed = 0;
 let failed = 0;
 
@@ -24,12 +26,11 @@ async function runPlotDirectoryTests() {
   console.log(' RUNNING CUSTOMER PLOT DIRECTORY VERIFICATION SUITE');
   console.log('================================================================\n');
 
-  // Initialize test DB
+  // Initialize isolated test DB
+  const testDbPath = path.join(os.tmpdir(), `nova_test_plotdir_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
   closeDb();
-  const dbFile = path.resolve('./nova_explorer.db');
-  if (fs.existsSync(dbFile)) {
-    try { fs.unlinkSync(dbFile); } catch (e) {}
-  }
   seedDatabase();
 
   const allProjects = getAllProjects(true);
@@ -123,6 +124,13 @@ async function runPlotDirectoryTests() {
   const layout = getProjectLayout(edens.id);
   assert(layout !== null, 'Official project layout retrieved independently from CRM inventory data');
 
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n================================================================');
   console.log(` RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================\n');
@@ -134,3 +142,4 @@ runPlotDirectoryTests().catch(err => {
   console.error('Test suite error:', err);
   process.exit(1);
 });
+

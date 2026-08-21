@@ -1,17 +1,24 @@
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
 import { aiService } from '../server/services/ai/aiService.ts';
 import { aiIntentRouter } from '../server/services/ai/intentRouter.ts';
 import { aiRetrievalLayer } from '../server/services/ai/retrievalLayer.ts';
 import { createProperty } from '../server/services/propertyService.ts';
-import { getDb } from '../server/db/database.ts';
+import { getDb, closeDb } from '../server/db/database.ts';
+import { seedDatabase } from '../server/db/seed.ts';
 
 async function runAiEvaluationSuite() {
   console.log('====================================================');
   console.log('   NOVA PROPERTY EXPLORER AI EVALUATION SUITE       ');
   console.log('====================================================\n');
 
-  // Clean any previous test fixtures
+  const testDbPath = path.join(os.tmpdir(), `nova_test_ai_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
+  seedDatabase();
   const db = getDb();
-  db.prepare("DELETE FROM properties WHERE property_number IN ('Plot 1', 'Plot 8') AND project_id = 'proj_nova_diya_gardens'").run();
 
   // Create test plots using canonical property service
   const prop1 = createProperty({
@@ -193,8 +200,12 @@ async function runAiEvaluationSuite() {
     res14.text
   );
 
-  // Teardown: maintain clean baseline
-  db.prepare("DELETE FROM properties WHERE property_number IN ('Plot 1', 'Plot 8') AND project_id = 'proj_nova_diya_gardens'").run();
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
 
   console.log('\n====================================================');
   console.log(`EVALUATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);
@@ -209,3 +220,4 @@ runAiEvaluationSuite().catch(err => {
   console.error('Test run failed:', err);
   process.exit(1);
 });
+

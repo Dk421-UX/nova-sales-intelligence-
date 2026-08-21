@@ -1,4 +1,7 @@
-import { getDb } from '../server/db/database.ts';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { getDb, closeDb } from '../server/db/database.ts';
 import { seedDatabase } from '../server/db/seed.ts';
 import { createProject, deleteProject, getProjectById } from '../server/services/projectService.ts';
 import { getAuditLogs } from '../server/services/auditService.ts';
@@ -17,6 +20,10 @@ async function runTest() {
   console.log(' RUNNING PROJECT DELETION & AUDIT LOG VERIFICATION TEST');
   console.log('====================================================\n');
 
+  const testDbPath = path.join(os.tmpdir(), `nova_test_projdel_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
   seedDatabase();
   const db = getDb();
 
@@ -103,9 +110,17 @@ async function runTest() {
   const fkState = db.prepare('PRAGMA foreign_keys').get() as any;
   assert(Boolean(fkState.foreign_keys), 'PRAGMA foreign_keys is strictly ON (1)');
 
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n====================================================');
   console.log(' ALL 5 PROJECT DELETION & AUDIT CHECKS PASSED');
   console.log('====================================================\n');
 }
 
 runTest();
+

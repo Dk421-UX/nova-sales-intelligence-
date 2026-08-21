@@ -14,6 +14,8 @@ import * as xlsx from 'xlsx';
 import path from 'path';
 import fs from 'fs';
 
+import os from 'os';
+
 let passedTests = 0;
 let failedTests = 0;
 
@@ -33,17 +35,14 @@ async function runSuite() {
   console.log(' RUNNING NOVA PROPERTY EXPLORER PRODUCTION TEST SUITE');
   console.log('====================================================\n');
 
-  // Cleanly reset DB instance for testing
-  const { closeDb } = await import('../server/db/database.ts');
-  closeDb();
-  const dbFile = path.resolve('./nova_explorer.db');
-  if (fs.existsSync(dbFile)) {
-    try {
-      fs.unlinkSync(dbFile);
-    } catch (e) {}
-  }
+  // Configure isolated temporary database for test suite execution
+  const testDbPath = path.join(os.tmpdir(), `nova_test_suite_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
 
-  // Initialize DB & Seed with Clean Data State
+  const { closeDb, getDb } = await import('../server/db/database.ts');
+  closeDb();
+
+  // Initialize DB & Seed with Clean Baseline Data State in isolated test DB
   seedDatabase();
 
   // -------------------------------------------------------------
@@ -391,8 +390,15 @@ async function runSuite() {
   assert(aging.status === 'AGING', '48 hours timestamp classified as AGING (24-72h)');
 
   // -------------------------------------------------------------
-  // SUMMARY
+  // SUMMARY & CLEANUP
   // -------------------------------------------------------------
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n====================================================');
   console.log(` TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);
   console.log('====================================================\n');
@@ -406,4 +412,5 @@ runSuite().catch(err => {
   console.error('Test suite crashed with uncaught error:', err);
   process.exit(1);
 });
+
 

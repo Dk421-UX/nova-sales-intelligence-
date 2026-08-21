@@ -10,6 +10,8 @@ import * as xlsx from 'xlsx';
 import path from 'path';
 import fs from 'fs';
 
+import os from 'os';
+
 let passed = 0;
 let failed = 0;
 
@@ -29,12 +31,11 @@ async function runThreeUpgradesSuite() {
   console.log(' RUNNING 3 CRITICAL UPGRADES VERIFICATION SUITE');
   console.log('================================================================\n');
 
-  // Initialize clean test DB
+  // Initialize clean isolated test DB
+  const testDbPath = path.join(os.tmpdir(), `nova_test_upgrades_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
   closeDb();
-  const dbFile = path.resolve('./nova_explorer.db');
-  if (fs.existsSync(dbFile)) {
-    try { fs.unlinkSync(dbFile); } catch (e) {}
-  }
   seedDatabase();
 
   const allProjects = getAllProjects(true);
@@ -203,6 +204,13 @@ async function runThreeUpgradesSuite() {
   const deletedQuery = getProjectLayout(apartmentProject.id);
   assert(deletedQuery === null, 'Deleted layout is no longer returned for project');
 
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n================================================================');
   console.log(` RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================\n');
@@ -214,3 +222,4 @@ runThreeUpgradesSuite().catch(err => {
   console.error('Test suite uncaught error:', err);
   process.exit(1);
 });
+

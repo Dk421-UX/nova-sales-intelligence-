@@ -18,20 +18,14 @@ export function seedDatabase() {
   console.log('[Seed] Starting database seed with verified Nova project data...');
 
   const transaction = db.transaction(() => {
-    // 1. Seed Users (Hashed for both canonical and default environment logins)
-    const passwordHashAdmin = bcrypt.hashSync('admin123', 10);
+    // 1. Seed Users (Hashed with admin67@ for admin and staff123 for staff)
+    const passwordHashAdmin = bcrypt.hashSync('admin67@', 10);
     const passwordHashStaff = bcrypt.hashSync('staff123', 10);
 
     const insertUser = db.prepare(`
       INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        username = excluded.username,
-        email = excluded.email,
-        password_hash = excluded.password_hash,
-        full_name = excluded.full_name,
-        role = excluded.role,
-        updated_at = excluded.updated_at
+      ON CONFLICT(id) DO NOTHING
     `);
 
     insertUser.run('usr_admin', 'admin', 'admin@novalifespace.in', passwordHashAdmin, 'Nova System Administrator', 'ADMIN', now, now);
@@ -44,67 +38,32 @@ export function seedDatabase() {
         total_area_reference, total_units_reference, brochure_reference, cover_image, status,
         current_version, is_published, last_verified_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        slug = excluded.slug,
-        name = excluded.name,
-        project_type = excluded.project_type,
-        location = excluded.location,
-        city = excluded.city,
-        description = excluded.description,
-        highlights = excluded.highlights,
-        amenities = excluded.amenities,
-        total_area_reference = excluded.total_area_reference,
-        total_units_reference = excluded.total_units_reference,
-        brochure_reference = excluded.brochure_reference,
-        cover_image = excluded.cover_image,
-        status = excluded.status,
-        current_version = excluded.current_version,
-        is_published = excluded.is_published,
-        last_verified_at = excluded.last_verified_at,
-        updated_at = excluded.updated_at
+      ON CONFLICT(id) DO NOTHING
     `);
 
     const insertVersion = db.prepare(`
       INSERT INTO project_versions (id, project_id, version_number, project_type, change_summary, performed_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        change_summary = excluded.change_summary
+      ON CONFLICT(id) DO NOTHING
     `);
-
-    // Clear stale geometries on re-seed
-    db.prepare('DELETE FROM property_geometry').run();
 
     const insertLayout = db.prepare(`
       INSERT INTO layouts (
         id, project_id, name, layout_type, version, svg_content, image_url, width, height, viewbox, reference_stats, status, is_active, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        svg_content = excluded.svg_content,
-        image_url = excluded.image_url,
-        width = excluded.width,
-        height = excluded.height,
-        viewbox = excluded.viewbox,
-        reference_stats = excluded.reference_stats,
-        status = excluded.status,
-        updated_at = excluded.updated_at
+      ON CONFLICT(id) DO NOTHING
     `);
 
     const insertBuilding = db.prepare(`
       INSERT INTO buildings (id, project_id, name, total_floors, description, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        total_floors = excluded.total_floors,
-        description = excluded.description
+      ON CONFLICT(id) DO NOTHING
     `);
 
     const insertFloor = db.prepare(`
       INSERT INTO floors (id, building_id, floor_number, floor_name, floor_plan_svg, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        floor_name = excluded.floor_name,
-        floor_plan_svg = excluded.floor_plan_svg
+      ON CONFLICT(id) DO NOTHING
     `);
 
     const insertAudit = db.prepare(`
@@ -533,14 +492,7 @@ export function seedDatabase() {
 
     insertVersion.run('ver_pinnacle_1', 'proj_nova_pinnacle', 1, 'PLOT', 'Official master project record registered in Coimbatore catalog', 'usr_admin', now);
 
-    // Clear previous prototype inventory and geometry to guarantee clean baseline data state (Requirement 19)
-    db.prepare('DELETE FROM properties').run();
-    db.prepare('DELETE FROM property_geometry').run();
-    db.prepare('DELETE FROM draft_changes').run();
-    db.prepare('DELETE FROM imports').run();
-    db.prepare('DELETE FROM import_rows').run();
-
-    console.log('[Seed] Projects, layouts, and users registered successfully with clean 0-inventory baseline.');
+    console.log('[Seed] Projects, layouts, and users registered successfully with non-destructive idempotent baseline.');
   });
 
   transaction();

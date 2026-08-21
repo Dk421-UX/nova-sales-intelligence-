@@ -49,19 +49,19 @@ app.use('/uploads', express.static(persistentUploadsDir));
 app.use('/layouts', express.static(persistentLayoutsDir));
 app.use('/layouts', express.static(publicLayoutsDir));
 
-// Initialize Database & Run Migrations
+// Initialize Database & Run Non-Destructive Migrations
 try {
   const db = getDb();
   runMigrations(db);
 
-  // Auto-seed database if empty (guarantees properties are never 0 on clean start)
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM properties').get() as any;
-  if (!countRow || countRow.count === 0) {
-    console.log('[Startup] Properties table is empty. Seeding verified Nova project inventory...');
+  // Initialize baseline project catalog only if projects table is completely uninitialized
+  const projectCountRow = db.prepare('SELECT COUNT(*) as count FROM projects').get() as any;
+  if (!projectCountRow || projectCountRow.count === 0) {
+    console.log('[Startup] Projects catalog is empty. Initializing baseline project catalog...');
     seedDatabase();
   }
 } catch (e: any) {
-  console.warn('[Startup] Database initialization / seed check exception:', e.message);
+  console.warn('[Startup] Database initialization / catalog check exception:', e.message);
 }
 
 // Dynamic Health check endpoint

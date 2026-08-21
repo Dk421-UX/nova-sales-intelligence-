@@ -1,4 +1,7 @@
-import { getDb } from '../server/db/database.ts';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { getDb, closeDb } from '../server/db/database.ts';
 import { seedDatabase } from '../server/db/seed.ts';
 import app from '../server/index.ts';
 import http from 'http';
@@ -17,6 +20,10 @@ async function runCrmFlowTest() {
   console.log(' RUNNING CRM LOGIN & INVENTORY INITIALIZATION TEST');
   console.log('====================================================\n');
 
+  const testDbPath = path.join(os.tmpdir(), `nova_test_crm_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
   seedDatabase();
 
   const server = http.createServer(app);
@@ -25,14 +32,14 @@ async function runCrmFlowTest() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
-    // 1. CRM Login
+    // 1. CRM Login with updated admin67@
     const loginRes = await fetch(`${baseUrl}/api/crm/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'AdminPassword2026!' })
+      body: JSON.stringify({ username: 'admin', password: 'admin67@' })
     });
     const loginData = await loginRes.json();
-    assert(loginRes.ok && loginData.success, 'CRM admin login succeeds');
+    assert(loginRes.ok && loginData.success, 'CRM admin login succeeds with admin67@');
     assert(Boolean(loginData.token), 'CRM login returns valid JWT token');
 
     const token = loginData.token;
@@ -78,7 +85,14 @@ async function runCrmFlowTest() {
     console.log('====================================================\n');
   } finally {
     server.close();
+    closeDb();
+    try {
+      if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+      if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+      if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+    } catch (e) {}
   }
 }
 
 runCrmFlowTest();
+

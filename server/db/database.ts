@@ -9,10 +9,14 @@ const __dirname = path.dirname(__filename);
 
 const rootDir = path.resolve(__dirname, '../..');
 
+export function getEffectiveDbPath(): string {
+  return process.env.DB_PATH || config.dbPath;
+}
+
 // Ensure directories exist safely
-function ensureDirectories() {
+function ensureDirectories(dbFilePath: string) {
   try {
-    const dbDir = path.dirname(config.dbPath);
+    const dbDir = path.dirname(dbFilePath);
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
@@ -25,29 +29,39 @@ function ensureDirectories() {
   } catch (e) {}
 }
 
-ensureDirectories();
-
 let dbInstance: DatabaseType | null = null;
+let currentOpenedPath: string | null = null;
 
 export function getDb(): DatabaseType {
+  const effectivePath = getEffectiveDbPath();
+
+  if (dbInstance && currentOpenedPath !== effectivePath) {
+    try {
+      dbInstance.close();
+    } catch (e) {}
+    dbInstance = null;
+    currentOpenedPath = null;
+  }
+
   if (!dbInstance) {
-    ensureDirectories();
+    ensureDirectories(effectivePath);
 
     // In serverless, if template DB exists in project root, copy it to /tmp if not already present
-    if (config.isServerless && !fs.existsSync(config.dbPath)) {
+    if (config.isServerless && !fs.existsSync(effectivePath)) {
       const templateDb = path.join(rootDir, 'nova_explorer.db');
       if (fs.existsSync(templateDb)) {
         try {
-          fs.copyFileSync(templateDb, config.dbPath);
+          fs.copyFileSync(templateDb, effectivePath);
         } catch (e) {
-          console.warn('[DB] Could not copy template DB to /tmp:', e);
+          console.warn('[DB] Could not copy template DB to destination:', e);
         }
       }
     }
 
-    dbInstance = new Database(config.dbPath, {
+    dbInstance = new Database(effectivePath, {
       verbose: config.nodeEnv === 'development' ? undefined : undefined,
     });
+    currentOpenedPath = effectivePath;
     
     try {
       dbInstance.pragma('journal_mode = WAL');
@@ -73,7 +87,11 @@ export function initSchema(db: DatabaseType) {
 
 export function closeDb() {
   if (dbInstance) {
-    dbInstance.close();
+    try {
+      dbInstance.close();
+    } catch (e) {}
     dbInstance = null;
+    currentOpenedPath = null;
   }
 }
+

@@ -1,10 +1,11 @@
-import { getDb } from '../server/db/database.ts';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { getDb, closeDb } from '../server/db/database.ts';
 import { seedDatabase } from '../server/db/seed.ts';
 import { getAllProjects, getProjectBySlug, getProjectLayout, getProjectLayouts, uploadProjectLayout, publishLayout, deleteLayout } from '../server/services/projectService.ts';
 import { aiService } from '../server/services/ai/aiService.ts';
 import { aiIntentRouter } from '../server/services/ai/intentRouter.ts';
-import fs from 'fs';
-import path from 'path';
 
 let passed = 0;
 let failed = 0;
@@ -24,6 +25,10 @@ async function runUltraSuite() {
   console.log(' RUNNING ULTRA PRODUCTION ENHANCEMENT TEST SUITE');
   console.log('====================================================\n');
 
+  const testDbPath = path.join(os.tmpdir(), `nova_test_ultra_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
   seedDatabase();
   const db = getDb();
 
@@ -224,6 +229,13 @@ async function runUltraSuite() {
   const aiNcrLegacy = aiIntentRouter.planQuery([{ role: 'user', content: 'tell me about Nova NCR Sub-Division' }]);
   assert(aiNcrLegacy.targetProjectSlug === 'nova-ncr', 'AI maps legacy "Nova NCR Sub-Division" to nova-ncr');
 
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n====================================================');
   console.log(` ULTRA PRODUCTION TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');
@@ -235,3 +247,4 @@ runUltraSuite().catch(err => {
   console.error('Fatal error during ultra production suite:', err);
   process.exit(1);
 });
+

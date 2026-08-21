@@ -54,15 +54,6 @@ crmRouter.post('/auth/login', (req: Request, res: Response) => {
       isValid = false;
     }
 
-    // Also support canonical environment credentials fallback
-    if (!isValid) {
-      if (user.username === 'admin' && (cleanPassword === 'admin123' || cleanPassword === 'AdminPassword2026!')) {
-        isValid = true;
-      } else if (user.username === 'staff' && (cleanPassword === 'staff123' || cleanPassword === 'StaffPassword2026!')) {
-        isValid = true;
-      }
-    }
-
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid username or password.' });
     }

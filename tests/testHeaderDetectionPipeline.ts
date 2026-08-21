@@ -1,7 +1,9 @@
+import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import * as xlsx from 'xlsx';
-import { getDb } from '../server/db/database.ts';
+import { getDb, closeDb } from '../server/db/database.ts';
+import { seedDatabase } from '../server/db/seed.ts';
 import { 
   generateImportPreview, 
   applyImport, 
@@ -25,6 +27,12 @@ async function runHeaderDetectionSuite() {
   console.log('================================================================');
   console.log(' RUNNING COMPREHENSIVE EXCEL HEADER DETECTION & IMPORT SUITE');
   console.log('================================================================\n');
+
+  const testDbPath = path.join(os.tmpdir(), `nova_test_header_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
+  seedDatabase();
 
   const rootDir = process.cwd();
   const db = getDb();
@@ -198,6 +206,13 @@ async function runHeaderDetectionSuite() {
   assert(nonMissingRows[0].propertyNumber === 'U-101', 'Custom mapping correctly used column 0 as propertyNumber ("U-101")');
   assert(nonMissingRows[0].areaSqft === 1250, 'Custom mapping correctly used column 1 as areaSqft (1250)');
 
+  closeDb();
+  try {
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
+    if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+  } catch (e) {}
+
   console.log('\n================================================================');
   console.log(' ALL EXCEL HEADER DETECTION & IMPORT TESTS PASSED SUCCESSFULLY');
   console.log('================================================================');
@@ -207,3 +222,4 @@ runHeaderDetectionSuite().catch(err => {
   console.error('\n❌ TEST SUITE FAILED:', err);
   process.exit(1);
 });
+
