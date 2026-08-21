@@ -113,4 +113,22 @@ export function runMigrations(db: DatabaseType = getDb()) {
     insertMigration.run(6, '006_rename_nova_pinnacle_and_nova_city_thiruvallur', new Date().toISOString());
     console.log('[Migration] Applied: 006_rename_nova_pinnacle_and_nova_city_thiruvallur');
   }
+
+  // Migration 7: Multi-phase compound unique index for properties (project_id, property_number, section_or_phase)
+  if (!appliedVersions.has(7)) {
+    try {
+      db.exec('DROP INDEX IF EXISTS idx_project_property_num_active');
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_project_property_num_active 
+        ON properties(project_id, property_number, coalesce(section_or_phase, '')) 
+        WHERE is_superseded = 0 AND is_archived = 0
+      `);
+    } catch (e) {
+      console.warn('[Migration 7 Warning]:', e);
+    }
+
+    const insertMigration = db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+    insertMigration.run(7, '007_multiphase_property_compound_unique_index', new Date().toISOString());
+    console.log('[Migration] Applied: 007_multiphase_property_compound_unique_index');
+  }
 }

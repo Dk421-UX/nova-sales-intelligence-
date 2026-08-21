@@ -21,6 +21,20 @@ export interface ValidationErrorDetail {
   suggestedAction: string;
 }
 
+export interface DuplicateRowDetail {
+  reason: string;
+  conflictingRowIndex?: number;
+  matchType: 'IN_FILE' | 'DATABASE_MATCH';
+  conflictingRowData?: {
+    rowIndex?: number;
+    propertyNumber: string;
+    status: string;
+    facing: string | null;
+    areaSqft: number | null;
+    sectionOrPhase: string | null;
+  };
+}
+
 export interface ImportPreviewRow {
   rowIndex: number;
   propertyNumber: string;
@@ -40,6 +54,7 @@ export interface ImportPreviewRow {
   existingData?: any;
   validationError?: string;
   errorDetails?: ValidationErrorDetail;
+  duplicateDetails?: DuplicateRowDetail;
 }
 
 export function sanitizeCellValue(val: any): any {
@@ -60,6 +75,14 @@ export function normalizePropertyIdentifier(val: string): string {
     .toLowerCase()
     .trim()
     .replace(/^plot\s*[-#:]?\s*|^flat\s*[-#:]?\s*|^unit\s*[-#:]?\s*/i, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+export function normalizeSection(val: string | null | undefined): string {
+  if (!val) return '';
+  return val
+    .toLowerCase()
+    .trim()
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -151,7 +174,7 @@ export function generateImportPreview(
   }
 
   const previewRows: ImportPreviewRow[] = [];
-  const seenPropertyNumbers = new Set<string>();
+  const seenRowsMap = new Map<string, { rowIndex: number; propertyNumber: string; status: string; facing: string | null; areaSqft: number | null; sectionOrPhase: string | null }>();
   const matchedExistingIds = new Set<string>();
 
   // Fetch all existing properties for comparison
@@ -163,8 +186,16 @@ export function generateImportPreview(
   existingProperties.forEach(p => {
     const raw = p.property_number.toLowerCase().trim();
     const clean = normalizePropertyIdentifier(p.property_number);
-    existingMap.set(raw, p);
-    if (clean) existingMap.set(clean, p);
+    const sec = normalizeSection(p.section_or_phase);
+
+    // Store compound key if section exists, plus direct clean key
+    if (sec) {
+      existingMap.set(`${clean}::${sec}`, p);
+      existingMap.set(`${raw}::${sec}`, p);
+    }
+    // Also store fallback key
+    if (!existingMap.has(raw)) existingMap.set(raw, p);
+    if (clean && !existingMap.has(clean)) existingMap.set(clean, p);
   });
 
   let newCount = 0;
@@ -209,6 +240,8 @@ export function generateImportPreview(
     const sectionOrPhase = sectionRaw ? String(sanitizeCellValue(sectionRaw)).trim() : null;
 
     const cleanLookup = normalizePropertyIdentifier(propNumber);
+    const normSec = normalizeSection(sectionOrPhase);
+    const compoundKey = normSec ? `${cleanLookup}::${normSec}` : cleanLookup;
 
     // 1. Validation check for unsupported status
     if (!statusResult.isValid) {
@@ -242,9 +275,12 @@ export function generateImportPreview(
 
     const status = statusResult.status;
 
-    // 2. LEVEL 1: Duplicate check within the same uploaded sheet
-    if (seenPropertyNumbers.has(cleanLookup || propNumber.toLowerCase())) {
+    // 2. LEVEL 1: Duplicate check within the same uploaded sheet (compound key: propertyNumber + section/phase)
+    if (seenRowsMap.has(compoundKey)) {
       duplicateCount++;
+      const prevRow = seenRowsMap.get(compoundKey)!;
+      const dupReason = `Duplicate of Row ${prevRow.rowIndex} in this spreadsheet: same plot identifier '${propNumber}'${sectionOrPhase ? ` in Section/Phase '${sectionOrPhase}'` : ''}.`;
+
       previewRows.push({
         rowIndex: rIdx + 1,
         propertyNumber: propNumber,
@@ -254,14 +290,29 @@ export function generateImportPreview(
         areaSqft,
         sectionOrPhase,
         changeType: 'DUPLICATE',
-        validationError: `Duplicate row in uploaded file for property identifier '${propNumber}'.`
+        validationError: dupReason,
+        duplicateDetails: {
+          reason: dupReason,
+          conflictingRowIndex: prevRow.rowIndex,
+          matchType: 'IN_FILE',
+          conflictingRowData: prevRow
+        }
       });
       continue;
     }
-    seenPropertyNumbers.add(cleanLookup || propNumber.toLowerCase());
+    seenRowsMap.set(compoundKey, {
+      rowIndex: rIdx + 1,
+      propertyNumber: propNumber,
+      status,
+      facing,
+      areaSqft,
+      sectionOrPhase
+    });
 
     // 3. LEVEL 2: Matching against existing database records
-    const existing = existingMap.get(propNumber.toLowerCase()) || (cleanLookup ? existingMap.get(cleanLookup) : undefined);
+    const existing = (normSec ? existingMap.get(compoundKey) : undefined) 
+      || existingMap.get(propNumber.toLowerCase()) 
+      || (cleanLookup ? existingMap.get(cleanLookup) : undefined);
 
     if (!existing) {
       newCount++;
@@ -441,7 +492,7 @@ export function applyImport(
   userRole: string,
   options?: {
     skipInvalid?: boolean;
-    rowActions?: Record<number, { action: 'SKIP' | 'SET_STATUS'; status?: string }>;
+    rowActions?: Record<number, { action: 'SKIP' | 'SET_STATUS' | 'KEEP' | 'EXCLUDE'; status?: string }>;
   }
 ) {
   const db = getDb();
@@ -459,7 +510,7 @@ export function applyImport(
   const invalidRows = rows.filter(r => {
     if (r.validation_status !== 'INVALID') return false;
     const action = rowActions[r.row_index];
-    if (action && (action.action === 'SKIP' || action.action === 'SET_STATUS')) return false;
+    if (action && (action.action === 'SKIP' || action.action === 'SET_STATUS' || action.action === 'EXCLUDE')) return false;
     return !skipInvalid;
   });
 
@@ -486,7 +537,7 @@ export function applyImport(
     UPDATE properties
     SET status = ?, facing = coalesce(?, facing), area_sqft = coalesce(?, area_sqft), section_or_phase = coalesce(?, section_or_phase),
         last_verified_at = ?, updated_at = ?, published_at = ?
-    WHERE project_id = ? AND property_number = ? AND is_archived = 0 AND is_superseded = 0
+    WHERE project_id = ? AND property_number = ? AND coalesce(section_or_phase, '') = ? AND is_archived = 0 AND is_superseded = 0
   `);
 
   let appliedCount = 0;
@@ -498,9 +549,21 @@ export function applyImport(
       let data: ImportPreviewRow = JSON.parse(r.normalized_data);
       const action = rowActions[data.rowIndex];
 
-      if (action?.action === 'SKIP' || (r.validation_status === 'INVALID' && skipInvalid)) {
+      // Explicit skip/exclude or automatic skip of invalid rows
+      if (action?.action === 'SKIP' || action?.action === 'EXCLUDE' || (r.validation_status === 'INVALID' && skipInvalid)) {
         skippedCount++;
         continue;
+      }
+
+      // Handle duplicate rows: only imported if explicitly marked KEEP by CRM
+      if (data.changeType === 'DUPLICATE') {
+        if (action?.action === 'KEEP') {
+          data.changeType = 'NEW';
+        } else {
+          // Excluded by default unless approved
+          skippedCount++;
+          continue;
+        }
       }
 
       if (action?.action === 'SET_STATUS' && action.status) {
@@ -510,27 +573,47 @@ export function applyImport(
 
       // MISSING rows, DUPLICATE rows are protected
       if (data.changeType === 'NEW') {
-        const id = `prop_${projectId.replace('proj_', '')}_${data.propertyNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${appliedCount}`;
-        insertProp.run(
-          id,
-          projectId,
-          data.propertyType,
-          data.propertyNumber,
-          data.status,
-          data.sectionOrPhase,
-          data.facing,
-          data.areaSqft,
-          null,
-          null,
-          importRecord.filename,
-          importRecord.detected_sheet_name,
-          data.rowIndex,
-          now,
-          now,
-          now,
-          now
-        );
-        appliedCount++;
+        const id = `prop_${projectId.replace('proj_', '')}_${data.propertyNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${data.sectionOrPhase ? data.sectionOrPhase.replace(/[^a-zA-Z0-9]/g, '_') + '_' : ''}${Date.now()}_${appliedCount}`;
+        try {
+          insertProp.run(
+            id,
+            projectId,
+            data.propertyType,
+            data.propertyNumber,
+            data.status,
+            data.sectionOrPhase,
+            data.facing,
+            data.areaSqft,
+            null,
+            null,
+            importRecord.filename,
+            importRecord.detected_sheet_name,
+            data.rowIndex,
+            now,
+            now,
+            now,
+            now
+          );
+          appliedCount++;
+        } catch (err: any) {
+          if (err.message && err.message.includes('UNIQUE constraint failed')) {
+            updateProp.run(
+              data.status,
+              data.facing,
+              data.areaSqft,
+              data.sectionOrPhase,
+              now,
+              now,
+              now,
+              projectId,
+              data.propertyNumber,
+              data.sectionOrPhase || ''
+            );
+            appliedCount++;
+          } else {
+            throw err;
+          }
+        }
       } else if (data.changeType === 'STATUS_CHANGE' || data.changeType === 'UPDATED' || data.changeType === 'CONFLICT') {
         updateProp.run(
           data.status,
@@ -541,7 +624,8 @@ export function applyImport(
           now,
           now,
           projectId,
-          data.propertyNumber
+          data.propertyNumber,
+          data.sectionOrPhase || ''
         );
         appliedCount++;
       }
@@ -562,7 +646,12 @@ export function applyImport(
   });
 
   transaction();
-  return { appliedCount, skippedCount, message: `Successfully applied ${appliedCount} records from import${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}.` };
+  return { 
+    success: true,
+    appliedCount, 
+    skippedCount, 
+    message: `Successfully applied ${appliedCount} records from import${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}.` 
+  };
 }
 
 function mapColumnIndices(headers: string[]) {

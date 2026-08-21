@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { config } from '../config.ts';
 import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
 import { calculateFreshness, FreshnessInfo } from './freshnessService.ts';
@@ -624,14 +625,22 @@ export function deleteLayout(layoutId: string, userId: string, userRole: string)
     // Storage Cleanup (Requirement 21)
     if (layout.image_url && layout.image_url.startsWith('/layouts/')) {
       const filename = path.basename(layout.image_url);
-      const filePath = path.join(process.cwd(), 'public', 'layouts', filename);
+      const publicFilePath = path.join(process.cwd(), 'public', 'layouts', filename);
+      const persistentFilePath = path.join(config.uploadsDir, 'layouts', filename);
       const otherUsing = db.prepare('SELECT COUNT(*) as count FROM layouts WHERE image_url = ? AND id != ?').get(layout.image_url, layoutId) as any;
       if (!otherUsing || otherUsing.count === 0) {
-        if (fs.existsSync(filePath)) {
+        if (fs.existsSync(publicFilePath)) {
           try {
-            fs.unlinkSync(filePath);
+            fs.unlinkSync(publicFilePath);
           } catch (e) {
-            console.warn('[Storage Cleanup Warning]: Failed to unlink file:', filePath, e);
+            console.warn('[Storage Cleanup Warning]: Failed to unlink public file:', publicFilePath, e);
+          }
+        }
+        if (fs.existsSync(persistentFilePath)) {
+          try {
+            fs.unlinkSync(persistentFilePath);
+          } catch (e) {
+            console.warn('[Storage Cleanup Warning]: Failed to unlink persistent file:', persistentFilePath, e);
           }
         }
       }

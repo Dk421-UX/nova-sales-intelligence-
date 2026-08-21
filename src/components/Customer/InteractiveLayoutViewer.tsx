@@ -3,7 +3,9 @@ import { Property, LayoutPlan } from '../../types/models.ts';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, 
   Search, Eye, ShieldCheck, FileText, CheckCircle2, 
-  MapPin, Layers, Compass, ArrowRight, Sparkles
+  MapPin, Layers, Compass, ArrowRight, Sparkles,
+  ExternalLink, Download, AlertTriangle, ChevronLeft, ChevronRight,
+  LayoutGrid, List
 } from 'lucide-react';
 
 interface LayoutViewerProps {
@@ -34,11 +36,32 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'LAYOUT' | 'DIRECTORY'>('LAYOUT');
+  const [imageError, setImageError] = useState(false);
+  const [directoryMode, setDirectoryMode] = useState<'SHELF' | 'GRID'>('SHELF');
+
+  const shelfScrollRef = useRef<HTMLDivElement>(null);
+  const plotCardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    setImageError(false);
+  }, [layout?.id, layout?.image_url]);
+
+  // Auto-scroll selected plot into view in the directory
+  useEffect(() => {
+    if (selectedProperty && plotCardRefs.current[selectedProperty.id]) {
+      plotCardRefs.current[selectedProperty.id]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
+  }, [selectedProperty?.id]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
 
-  // Check if any verified vector geometry exists for this project
+  // Check if layout asset exists and determine format
+  const isPdf = Boolean(layout?.image_url && layout.image_url.toLowerCase().endsWith('.pdf'));
   const verifiedProperties = properties.filter(p => p.geometry && p.geometry.svg_path);
   const hasVerifiedGeometry = verifiedProperties.length > 0;
   const hasLayoutAsset = Boolean(layout && (layout.image_url || layout.svg_content));
@@ -453,6 +476,18 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
             >
               <RotateCcw size={14} />
             </button>
+            {layout?.image_url && (
+              <a
+                href={layout.image_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="layout-ctrl-btn"
+                title="Open / Download Original File in New Tab"
+                style={{ width: '28px', height: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}
+              >
+                <ExternalLink size={14} />
+              </a>
+            )}
             <button 
               className="layout-ctrl-btn" 
               onClick={handleToggleFullscreen} 
@@ -516,90 +551,136 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
         >
           {/* Authentic Layout Presentation */}
           {layout?.image_url ? (
-            <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%', display: 'inline-block' }}>
-              <img
-                src={layout.image_url}
-                alt={layout.name}
-                draggable={false}
-                style={{
-                  display: 'block',
-                  maxWidth: '100%',
-                  maxHeight: isFullscreen ? 'calc(100vh - 160px)' : '560px',
-                  objectFit: 'contain',
-                  borderRadius: '4px',
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+            isPdf ? (
+              <div 
+                style={{ 
+                  width: '100%', 
+                  height: isFullscreen ? 'calc(100vh - 160px)' : '560px', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  background: '#0a0e17', 
+                  borderRadius: '6px', 
+                  overflow: 'hidden', 
                   border: '1px solid rgba(255, 255, 255, 0.12)',
-                  filter: 'contrast(1.05) brightness(1.02)'
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)'
                 }}
-              />
-
-              {/* Mode A: Overlay Verified Polygons with subtle restrained styling (Section 7) */}
-              {viewerMode === 'MODE_A' && (
-                <svg
-                  viewBox={viewBox}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'auto'
+              >
+                <iframe
+                  src={`${layout.image_url}#toolbar=1&navpanes=0`}
+                  title={layout.name || 'Official Layout Plan'}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                />
+              </div>
+            ) : imageError ? (
+              <div 
+                style={{ 
+                  padding: '3rem 2rem', 
+                  textAlign: 'center', 
+                  background: 'rgba(212, 175, 55, 0.05)', 
+                  border: '1px solid var(--border-subtle)', 
+                  borderRadius: 'var(--radius-md)', 
+                  color: 'var(--text-secondary)', 
+                  maxWidth: '500px' 
+                }}
+              >
+                <AlertTriangle size={36} color="var(--brand-gold)" style={{ margin: '0 auto 0.75rem' }} />
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.05rem', marginBottom: '0.4rem' }}>
+                  Official Layout Being Updated
+                </div>
+                <div style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                  The architectural drawing for {layout.name} is being refreshed. You can explore and filter all verified inventory in the directory below.
+                </div>
+              </div>
+            ) : (
+              <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%', display: 'inline-block' }}>
+                <img
+                  src={layout.image_url}
+                  alt={layout.name}
+                  onError={() => {
+                    console.warn('[Layout Viewer]: Image asset load failed for URL:', layout.image_url);
+                    setImageError(true);
                   }}
-                >
-                  {verifiedProperties.map(p => {
-                    const isSelected = selectedProperty?.id === p.id;
-                    const isMatchingFilter = filteredPropertyIds.has(p.id);
-                    const isComparing = comparisonIds.includes(p.id);
-                    const isHovered = hoveredProperty?.id === p.id;
+                  draggable={false}
+                  style={{
+                    display: 'block',
+                    maxWidth: '100%',
+                    maxHeight: isFullscreen ? 'calc(100vh - 160px)' : '560px',
+                    objectFit: 'contain',
+                    borderRadius: '4px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    filter: 'contrast(1.05) brightness(1.02)'
+                  }}
+                />
 
-                    const statusColor = getStatusColor(p.status);
-                    const strokeColor = isSelected ? '#d4af37' : (isHovered ? '#ffffff' : statusColor);
-                    const strokeWidth = isSelected ? 3 : (isHovered ? 2.2 : 1.2);
-                    // Restrained translucent fill — never covers layout (Section 7)
-                    const fillOpacity = isSelected ? 0.35 : (isHovered ? 0.25 : 0.08);
+                {/* Mode A: Overlay Verified Polygons with subtle restrained styling (Section 7) */}
+                {viewerMode === 'MODE_A' && (
+                  <svg
+                    viewBox={viewBox}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: 'auto'
+                    }}
+                  >
+                    {verifiedProperties.map(p => {
+                      const isSelected = selectedProperty?.id === p.id;
+                      const isMatchingFilter = filteredPropertyIds.has(p.id);
+                      const isComparing = comparisonIds.includes(p.id);
+                      const isHovered = hoveredProperty?.id === p.id;
 
-                    return (
-                      <g key={p.id}>
-                        <path
-                          d={p.geometry!.svg_path!}
-                          fill={statusColor}
-                          fillOpacity={isMatchingFilter ? fillOpacity : 0.02}
-                          stroke={strokeColor}
-                          strokeWidth={strokeWidth}
-                          strokeDasharray={isSelected ? 'none' : (p.status === 'AVAILABLE' ? 'none' : '3 2')}
-                          style={{
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                          onClick={e => {
-                            e.stopPropagation();
-                            onSelectProperty(p);
-                          }}
-                          onMouseEnter={() => setHoveredProperty(p)}
-                          onMouseLeave={() => setHoveredProperty(null)}
-                        />
+                      const statusColor = getStatusColor(p.status);
+                      const strokeColor = isSelected ? '#d4af37' : (isHovered ? '#ffffff' : statusColor);
+                      const strokeWidth = isSelected ? 3 : (isHovered ? 2.2 : 1.2);
+                      // Restrained translucent fill — never covers layout (Section 7)
+                      const fillOpacity = isSelected ? 0.35 : (isHovered ? 0.25 : 0.08);
 
-                        {/* Progressive Label: show number only on hover or when zoomed in */}
-                        {(scale > 1.4 || isSelected || isHovered) && (
-                          <text
-                            x={p.geometry!.center_x}
-                            y={p.geometry!.center_y}
-                            fill="#ffffff"
-                            fontSize="11"
-                            fontWeight="700"
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            style={{ pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
-                          >
-                            {p.property_number.replace(/plot\s*/i, '')}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
-              )}
-            </div>
+                      return (
+                        <g key={p.id}>
+                          <path
+                            d={p.geometry!.svg_path!}
+                            fill={statusColor}
+                            fillOpacity={isMatchingFilter ? fillOpacity : 0.02}
+                            stroke={strokeColor}
+                            strokeWidth={strokeWidth}
+                            strokeDasharray={isSelected ? 'none' : (p.status === 'AVAILABLE' ? 'none' : '3 2')}
+                            style={{
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onClick={e => {
+                              e.stopPropagation();
+                              onSelectProperty(p);
+                            }}
+                            onMouseEnter={() => setHoveredProperty(p)}
+                            onMouseLeave={() => setHoveredProperty(null)}
+                          />
+
+                          {/* Progressive Label: show number only on hover or when zoomed in */}
+                          {(scale > 1.4 || isSelected || isHovered) && (
+                            <text
+                              x={p.geometry!.center_x}
+                              y={p.geometry!.center_y}
+                              fill="#ffffff"
+                              fontSize="11"
+                              fontWeight="700"
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              style={{ pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
+                            >
+                              {p.property_number.replace(/plot\s*/i, '')}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+              </div>
+            )
           ) : layout?.svg_content ? (
             /* Direct SVG Vector Plan with native CAD strokes */
             <svg
@@ -703,7 +784,7 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
         </div>
       </div>
 
-      {/* Accessible Property Directory & Quick-Jump Shelf (Section 9, 28) */}
+      {/* Accessible Property Directory & Complete Inventory Browser (Section 9, 28) */}
       <div 
         style={{
           background: 'var(--bg-surface)',
@@ -711,79 +792,223 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
           padding: '1rem 1.25rem'
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Compass size={16} color="var(--brand-gold)" />
-            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff' }}>
-              Verified Property Directory
-            </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              ({searchedProperties.length} of {properties.length} matching)
-            </span>
+        {/* Directory Header Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <Compass size={16} color="var(--brand-gold)" />
+              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff' }}>
+                Verified Property Directory
+              </span>
+            </div>
+
+            {/* Exact Inventory Status Badges */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem' }}>
+              <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 600 }}>
+                {searchedProperties.length} {searchedProperties.length === 1 ? 'Plot' : 'Plots'}
+              </span>
+              <span style={{ background: 'rgba(16, 185, 129, 0.12)', color: 'var(--status-available)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                {searchedProperties.filter(p => p.status === 'AVAILABLE').length} Available
+              </span>
+              <span style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--status-booked)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                {searchedProperties.filter(p => p.status === 'BOOKED').length} Booked
+              </span>
+              {searchedProperties.some(p => p.status === 'REGISTERED' || p.status === 'SOLD') && (
+                <span style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                  {searchedProperties.filter(p => p.status === 'REGISTERED' || p.status === 'SOLD').length} Sold
+                </span>
+              )}
+            </div>
           </div>
 
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Select any plot to inspect verified specifications & pricing
-          </span>
+          {/* View Mode Toggle & Shelf Scroll Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {directoryMode === 'SHELF' && searchedProperties.length > 5 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => shelfScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })}
+                  title="Scroll Left"
+                  style={{ width: '28px', height: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => shelfScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })}
+                  title="Scroll Right"
+                  style={{ width: '28px', height: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            )}
+
+            <button
+              className={`btn btn-sm ${directoryMode === 'GRID' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setDirectoryMode(m => m === 'SHELF' ? 'GRID' : 'SHELF')}
+              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
+            >
+              {directoryMode === 'SHELF' ? (
+                <>
+                  <LayoutGrid size={13} /> View All ({searchedProperties.length}) Grid
+                </>
+              ) : (
+                <>
+                  <List size={13} /> Compact Shelf
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* Horizontal Property Badge Shelf */}
-        <div 
-          style={{
-            display: 'flex',
-            gap: '0.5rem',
-            overflowX: 'auto',
-            paddingBottom: '0.5rem',
-            scrollbarWidth: 'thin'
-          }}
-        >
-          {searchedProperties.slice(0, 40).map(p => {
-            const isSelected = selectedProperty?.id === p.id;
-            const isComparing = comparisonIds.includes(p.id);
-            const statusColor = getStatusColor(p.status);
+        {/* Complete Inventory Rendering — Every plot is accessible and clickable */}
+        {searchedProperties.length === 0 ? (
+          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            No properties match the current search or filters.
+          </div>
+        ) : directoryMode === 'SHELF' ? (
+          /* Horizontal Scroll Shelf with ALL Plots */
+          <div 
+            ref={shelfScrollRef}
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              overflowX: 'auto',
+              paddingBottom: '0.65rem',
+              scrollbarWidth: 'thin'
+            }}
+          >
+            {searchedProperties.map(p => {
+              const isSelected = selectedProperty?.id === p.id;
+              const isComparing = comparisonIds.includes(p.id);
+              const statusColor = getStatusColor(p.status);
 
-            return (
-              <button
-                key={p.id}
-                onClick={() => onSelectProperty(p)}
-                style={{
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  padding: '0.4rem 0.75rem',
-                  background: isSelected ? 'rgba(212, 175, 55, 0.15)' : 'var(--bg-surface-raised)',
-                  border: `1px solid ${isSelected ? 'var(--brand-gold)' : 'var(--border-subtle)'}`,
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  color: isSelected ? 'var(--brand-gold)' : '#fff',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusColor }}></span>
-                <span>{p.property_number}</span>
-                {p.area_sqft && (
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                    {p.area_sqft} sqft
+              return (
+                <button
+                  key={p.id}
+                  ref={el => { plotCardRefs.current[p.id] = el; }}
+                  onClick={() => onSelectProperty(p)}
+                  style={{
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.45rem 0.8rem',
+                    background: isSelected ? 'rgba(212, 175, 55, 0.18)' : 'var(--bg-surface-raised)',
+                    border: `1.5px solid ${isSelected ? 'var(--brand-gold)' : (isComparing ? 'var(--accent-cyan)' : 'var(--border-subtle)')}`,
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    color: isSelected ? 'var(--brand-gold)' : '#fff',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 0 12px rgba(212, 175, 55, 0.3)' : 'none'
+                  }}
+                >
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: statusColor, flexShrink: 0 }}></span>
+                  <span>{p.property_number}</span>
+                  {p.section_or_phase && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--brand-gold)', background: 'rgba(212, 175, 55, 0.1)', padding: '0.1rem 0.3rem', borderRadius: '2px' }}>
+                      {p.section_or_phase}
+                    </span>
+                  )}
+                  {p.area_sqft && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                      {p.area_sqft} sqft
+                    </span>
+                  )}
+                  {p.facing && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                      {p.facing}
+                    </span>
+                  )}
+                  <span 
+                    style={{ 
+                      fontSize: '0.68rem', 
+                      color: statusColor,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.02em',
+                      fontWeight: 700
+                    }}
+                  >
+                    {p.status}
                   </span>
-                )}
-                {p.facing && (
-                  <span style={{ fontSize: '0.68rem', color: 'var(--brand-gold)', background: 'rgba(212, 175, 55, 0.1)', padding: '0.1rem 0.3rem', borderRadius: '2px' }}>
-                    {p.facing.charAt(0)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* Expandable Grid View with ALL Plots */
+          <div 
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+              gap: '0.65rem',
+              maxHeight: '380px',
+              overflowY: 'auto',
+              paddingRight: '0.35rem',
+              paddingBottom: '0.5rem',
+              scrollbarWidth: 'thin'
+            }}
+          >
+            {searchedProperties.map(p => {
+              const isSelected = selectedProperty?.id === p.id;
+              const isComparing = comparisonIds.includes(p.id);
+              const statusColor = getStatusColor(p.status);
 
-          {searchedProperties.length > 40 && (
-            <span style={{ flexShrink: 0, alignSelf: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0 0.5rem' }}>
-              +{searchedProperties.length - 40} more
-            </span>
-          )}
-        </div>
+              return (
+                <button
+                  key={p.id}
+                  ref={el => { plotCardRefs.current[p.id] = el; }}
+                  onClick={() => onSelectProperty(p)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '0.35rem',
+                    padding: '0.65rem 0.85rem',
+                    background: isSelected ? 'rgba(212, 175, 55, 0.18)' : 'var(--bg-surface-raised)',
+                    border: `1.5px solid ${isSelected ? 'var(--brand-gold)' : (isComparing ? 'var(--accent-cyan)' : 'var(--border-subtle)')}`,
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    color: isSelected ? 'var(--brand-gold)' : '#fff',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 0 12px rgba(212, 175, 55, 0.3)' : 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: isSelected ? 'var(--brand-gold)' : '#fff' }}>
+                      {p.property_number}
+                    </span>
+                    <span 
+                      style={{ 
+                        fontSize: '0.68rem', 
+                        color: statusColor, 
+                        fontWeight: 700,
+                        background: `${statusColor}1a`,
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '3px',
+                        border: `1px solid ${statusColor}40`
+                      }}
+                    >
+                      {p.status}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {p.area_sqft && <span>{p.area_sqft} sq.ft</span>}
+                    {p.facing && <span>• {p.facing}</span>}
+                    {p.section_or_phase && (
+                      <span style={{ color: 'var(--brand-gold)' }}>• {p.section_or_phase}</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

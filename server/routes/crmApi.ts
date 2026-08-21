@@ -237,17 +237,30 @@ crmRouter.post('/projects/:id/layout', authenticateToken, requireRole(['ADMIN', 
         return res.status(400).json({ error: 'Unsupported file format. Supported formats: PDF, JPG, JPEG, PNG, SVG.' });
       }
 
-      const layoutsDir = path.join(process.cwd(), 'public', 'layouts');
-      if (!fs.existsSync(layoutsDir)) {
-        fs.mkdirSync(layoutsDir, { recursive: true });
+      const persistentLayoutsDir = path.join(config.uploadsDir, 'layouts');
+      const publicLayoutsDir = path.join(process.cwd(), 'public', 'layouts');
+
+      if (!fs.existsSync(persistentLayoutsDir)) {
+        fs.mkdirSync(persistentLayoutsDir, { recursive: true });
+      }
+      if (!fs.existsSync(publicLayoutsDir)) {
+        fs.mkdirSync(publicLayoutsDir, { recursive: true });
       }
 
       if (ext === '.svg') {
         svgContent = req.file.buffer.toString('utf-8');
       } else {
         const safeFilename = `${projectId.replace(/[^a-zA-Z0-9]/g, '_')}_layout_${Date.now()}${ext}`;
-        const targetPath = path.join(layoutsDir, safeFilename);
-        fs.writeFileSync(targetPath, req.file.buffer);
+        const persistentPath = path.join(persistentLayoutsDir, safeFilename);
+        const publicPath = path.join(publicLayoutsDir, safeFilename);
+
+        fs.writeFileSync(persistentPath, req.file.buffer);
+        try {
+          fs.writeFileSync(publicPath, req.file.buffer);
+        } catch (e) {
+          // public write non-fatal if persistent write succeeded
+        }
+
         imageUrl = `/layouts/${safeFilename}`;
       }
     }
@@ -482,7 +495,7 @@ crmRouter.post('/excel/apply', authenticateToken, (req: AuthRequest, res: Respon
       skipInvalid: Boolean(skipInvalid),
       rowActions: rowActions || undefined
     });
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Failed to apply import.' });
   }

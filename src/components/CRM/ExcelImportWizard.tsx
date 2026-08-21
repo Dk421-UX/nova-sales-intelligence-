@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Project } from '../../types/models.ts';
 import { api } from '../../services/api.ts';
-import { X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ArrowRight, Settings, Check, RefreshCw } from 'lucide-react';
+import { X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ArrowRight, Settings, Check, RefreshCw, Copy, Layers, Trash2 } from 'lucide-react';
 
 interface ExcelImportWizardProps {
   project: Project;
@@ -21,7 +21,7 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
   const [showMappingEditor, setShowMappingEditor] = useState(false);
   const [customMapping, setCustomMapping] = useState<any>({});
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
-  const [rowActions, setRowActions] = useState<Record<number, { action: 'SKIP' | 'SET_STATUS'; status?: string }>>({});
+  const [rowActions, setRowActions] = useState<Record<number, { action: 'SKIP' | 'SET_STATUS' | 'KEEP' | 'EXCLUDE'; status?: string }>>({});
 
   const [isLoading, setIsLoading] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
@@ -307,6 +307,120 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                 </div>
               )}
 
+              {/* Duplicate Rows Review Card (Governance Pipeline) */}
+              {preview.summary.duplicateCount > 0 && (
+                <div style={{ background: 'rgba(212, 175, 55, 0.08)', border: '1.5px solid rgba(212, 175, 55, 0.35)', borderRadius: 'var(--radius-md)', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Copy size={20} color="var(--brand-gold)" />
+                      <div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>
+                          Duplicate Review Required: {preview.summary.duplicateCount} Potential Duplicate Row(s) Detected
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          These rows share identical identifiers with prior rows in this spreadsheet. Review each row below to keep legitimate units or exclude unintended duplicates.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.78rem', color: 'var(--status-available)', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                        onClick={() => {
+                          const updated = { ...rowActions };
+                          preview.rows.filter((r: any) => r.changeType === 'DUPLICATE').forEach((r: any) => {
+                            updated[r.rowIndex] = { action: 'KEEP' };
+                          });
+                          setRowActions(updated);
+                        }}
+                      >
+                        ✓ Keep All Duplicates
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}
+                        onClick={() => {
+                          const updated = { ...rowActions };
+                          preview.rows.filter((r: any) => r.changeType === 'DUPLICATE').forEach((r: any) => {
+                            updated[r.rowIndex] = { action: 'EXCLUDE' };
+                          });
+                          setRowActions(updated);
+                        }}
+                      >
+                        Exclude All Duplicates
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of specific duplicate rows */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem', maxHeight: '240px', overflowY: 'auto' }}>
+                    {preview.rows.filter((r: any) => r.changeType === 'DUPLICATE').map((dup: any, idx: number) => {
+                      const action = rowActions[dup.rowIndex];
+                      const isKept = action?.action === 'KEEP';
+                      const isExcluded = action?.action === 'EXCLUDE' || (!action && !isKept);
+                      const detail = dup.duplicateDetails;
+
+                      return (
+                        <div 
+                          key={idx} 
+                          style={{ 
+                            background: isKept ? 'rgba(16, 185, 129, 0.08)' : 'rgba(0,0,0,0.35)', 
+                            padding: '0.75rem 1rem', 
+                            borderRadius: 'var(--radius-sm)', 
+                            border: `1px solid ${isKept ? 'rgba(16, 185, 129, 0.4)' : 'rgba(212, 175, 55, 0.25)'}`, 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            flexWrap: 'wrap', 
+                            gap: '0.75rem' 
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span>Row {dup.rowIndex}: Plot {dup.propertyNumber}</span>
+                              {dup.sectionOrPhase && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--brand-gold)', background: 'rgba(212, 175, 55, 0.1)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>
+                                  {dup.sectionOrPhase}
+                                </span>
+                              )}
+                              <span className={`badge badge-${dup.status.toLowerCase()}`} style={{ fontSize: '0.68rem' }}>
+                                {dup.status}
+                              </span>
+                              {dup.areaSqft && (
+                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                                  {dup.areaSqft} sq.ft
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                              {detail?.reason || dup.validationError}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <button
+                              className={`btn btn-sm ${isKept ? 'btn-primary' : 'btn-secondary'}`}
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                              onClick={() => setRowActions(prev => ({ ...prev, [dup.rowIndex]: { action: 'KEEP' } }))}
+                            >
+                              {isKept ? '✓ Kept in Import' : 'Keep Row'}
+                            </button>
+                            <button
+                              className={`btn btn-sm ${isExcluded && action?.action === 'EXCLUDE' ? 'btn-danger' : 'btn-secondary'}`}
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem', color: isExcluded && action?.action === 'EXCLUDE' ? '#ef4444' : 'var(--text-muted)' }}
+                              onClick={() => setRowActions(prev => ({ ...prev, [dup.rowIndex]: { action: 'EXCLUDE' } }))}
+                            >
+                              {isExcluded && action?.action === 'EXCLUDE' ? 'Excluded' : 'Exclude'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Summary Stats Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(110px, 1fr))`, gap: '0.75rem' }}>
                 <div style={{ background: 'var(--bg-surface-raised)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
@@ -344,9 +458,11 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                 )}
 
                 {preview.summary.duplicateCount > 0 && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ef4444' }}>{preview.summary.duplicateCount}</div>
-                    <div style={{ fontSize: '0.68rem', color: '#ef4444', textTransform: 'uppercase' }}>Duplicates</div>
+                  <div style={{ background: 'rgba(212, 175, 55, 0.12)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid rgba(212, 175, 55, 0.35)' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--brand-gold)' }}>{preview.summary.duplicateCount}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--brand-gold)', textTransform: 'uppercase' }}>
+                      Duplicates ({preview.rows.filter((r: any) => r.changeType === 'DUPLICATE' && rowActions[r.rowIndex]?.action === 'KEEP').length} Kept)
+                    </div>
                   </div>
                 )}
 
@@ -374,21 +490,35 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                   <tbody>
                     {preview.rows.map((r: any, idx: number) => {
                       const rowAction = rowActions[r.rowIndex];
-                      const isSkipped = rowAction?.action === 'SKIP' || (r.changeType === 'INVALID' && skipInvalidRows);
+                      const isDuplicate = r.changeType === 'DUPLICATE';
+                      const isDuplicateKept = isDuplicate && rowAction?.action === 'KEEP';
+                      const isDuplicateExcluded = isDuplicate && (rowAction?.action === 'EXCLUDE' || (!rowAction && !isDuplicateKept));
+                      const isSkipped = rowAction?.action === 'SKIP' || rowAction?.action === 'EXCLUDE' || (r.changeType === 'INVALID' && skipInvalidRows);
                       const isOverridden = rowAction?.action === 'SET_STATUS';
 
                       return (
                         <tr 
                           key={idx} 
                           style={{ 
-                            opacity: isSkipped ? 0.45 : 1,
-                            background: r.changeType === 'DUPLICATE' || r.changeType === 'INVALID' || r.changeType === 'CONFLICT' 
+                            opacity: (isSkipped || (isDuplicate && isDuplicateExcluded)) ? 0.55 : 1,
+                            background: isDuplicateKept 
+                              ? 'rgba(16, 185, 129, 0.08)' 
+                              : isDuplicate 
+                              ? 'rgba(212, 175, 55, 0.06)' 
+                              : (r.changeType === 'INVALID' || r.changeType === 'CONFLICT' 
                               ? 'rgba(239, 68, 68, 0.08)' 
-                              : (r.changeType === 'NEW' ? 'rgba(16, 185, 129, 0.08)' : (r.changeType === 'MISSING' ? 'rgba(245, 158, 11, 0.08)' : undefined)) 
+                              : (r.changeType === 'NEW' ? 'rgba(16, 185, 129, 0.08)' : (r.changeType === 'MISSING' ? 'rgba(245, 158, 11, 0.08)' : undefined))) 
                           }}
                         >
                           <td style={{ color: 'var(--text-muted)' }}>{r.rowIndex === -1 ? 'DB Only' : r.rowIndex}</td>
-                          <td style={{ fontWeight: 700, color: '#fff' }}>{r.propertyNumber}</td>
+                          <td style={{ fontWeight: 700, color: '#fff' }}>
+                            {r.propertyNumber}
+                            {r.sectionOrPhase && (
+                              <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: 'var(--brand-gold)' }}>
+                                ({r.sectionOrPhase})
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <span className={`badge badge-${(isOverridden ? rowAction.status : r.status).toLowerCase()}`}>
                               {isOverridden ? `${rowAction.status} (override)` : r.status}
@@ -403,14 +533,26 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                                 style={{
                                   display: 'inline-block',
                                   width: 'fit-content',
-                                  background: isSkipped ? 'rgba(100, 116, 139, 0.3)' : (r.changeType === 'NEW' ? 'rgba(16, 185, 129, 0.2)' : (r.changeType === 'STATUS_CHANGE' ? 'rgba(245, 158, 11, 0.2)' : (r.changeType === 'DUPLICATE' || r.changeType === 'INVALID' || r.changeType === 'CONFLICT' ? 'rgba(239, 68, 68, 0.2)' : (r.changeType === 'MISSING' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(100, 116, 139, 0.2)')))),
-                                  color: isSkipped ? 'var(--text-muted)' : (r.changeType === 'NEW' ? 'var(--status-available)' : (r.changeType === 'STATUS_CHANGE' ? 'var(--status-booked)' : (r.changeType === 'DUPLICATE' || r.changeType === 'INVALID' || r.changeType === 'CONFLICT' ? '#ef4444' : (r.changeType === 'MISSING' ? 'var(--brand-gold)' : 'var(--text-muted)'))))
+                                  background: isDuplicateKept 
+                                    ? 'rgba(16, 185, 129, 0.25)'
+                                    : isDuplicate 
+                                    ? 'rgba(212, 175, 55, 0.2)'
+                                    : isSkipped 
+                                    ? 'rgba(100, 116, 139, 0.3)' 
+                                    : (r.changeType === 'NEW' ? 'rgba(16, 185, 129, 0.2)' : (r.changeType === 'STATUS_CHANGE' ? 'rgba(245, 158, 11, 0.2)' : (r.changeType === 'INVALID' || r.changeType === 'CONFLICT' ? 'rgba(239, 68, 68, 0.2)' : (r.changeType === 'MISSING' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(100, 116, 139, 0.2)')))),
+                                  color: isDuplicateKept 
+                                    ? 'var(--status-available)'
+                                    : isDuplicate 
+                                    ? 'var(--brand-gold)'
+                                    : isSkipped 
+                                    ? 'var(--text-muted)' 
+                                    : (r.changeType === 'NEW' ? 'var(--status-available)' : (r.changeType === 'STATUS_CHANGE' ? 'var(--status-booked)' : (r.changeType === 'INVALID' || r.changeType === 'CONFLICT' ? '#ef4444' : (r.changeType === 'MISSING' ? 'var(--brand-gold)' : 'var(--text-muted)'))))
                                 }}
                               >
-                                {isSkipped ? 'SKIPPED' : (isOverridden ? 'STATUS OVERRIDE' : r.changeType)}
+                                {isDuplicateKept ? 'DUPLICATE (KEPT)' : (isDuplicate ? (isDuplicateExcluded ? 'DUPLICATE (EXCLUDED)' : 'DUPLICATE (REVIEW)') : (isSkipped ? 'SKIPPED' : (isOverridden ? 'STATUS OVERRIDE' : r.changeType)))}
                               </span>
-                              {r.validationError && !isSkipped && (
-                                <span style={{ fontSize: '0.72rem', color: '#ef4444' }}>
+                              {r.validationError && !isSkipped && !isDuplicateKept && (
+                                <span style={{ fontSize: '0.72rem', color: isDuplicate ? 'var(--brand-gold)' : '#ef4444' }}>
                                   {r.validationError}
                                 </span>
                               )}
@@ -423,18 +565,28 @@ export const ExcelImportWizard: React.FC<ExcelImportWizardProps> = ({
                 </table>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(2)}>
-                  Back to Sheet Selection
-                </button>
-                <button 
-                  className="btn btn-primary"
-                  onClick={handleApplyImport}
-                  disabled={isApplying || preview.summary.totalRows === 0}
-                >
-                  <CheckCircle2 size={16} /> {isApplying ? 'Applying Verified Import...' : `Apply Import (${preview.summary.newCount + preview.summary.statusChangeCount + preview.summary.updatedCount} Valid Records)`}
-                </button>
-              </div>
+              {/* Dynamic Approved Counts Calculation & Action Bar */}
+              {(() => {
+                const keptDups = preview.rows.filter((r: any) => r.changeType === 'DUPLICATE' && rowActions[r.rowIndex]?.action === 'KEEP').length;
+                const activeNew = preview.rows.filter((r: any) => r.changeType === 'NEW' && rowActions[r.rowIndex]?.action !== 'SKIP').length;
+                const activeStatus = preview.rows.filter((r: any) => (r.changeType === 'STATUS_CHANGE' || r.changeType === 'UPDATED') && rowActions[r.rowIndex]?.action !== 'SKIP').length;
+                const totalCommit = activeNew + activeStatus + keptDups;
+
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <button className="btn btn-secondary" onClick={() => setStep(2)}>
+                      Back to Sheet Selection
+                    </button>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={handleApplyImport}
+                      disabled={isApplying || preview.summary.totalRows === 0 || totalCommit === 0}
+                    >
+                      <CheckCircle2 size={16} /> {isApplying ? 'Applying Approved Import...' : `Apply Approved Import (${totalCommit} Records)`}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

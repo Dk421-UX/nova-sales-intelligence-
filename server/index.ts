@@ -28,13 +28,26 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static uploads directory
+// Static uploads & layouts directory
+const persistentUploadsDir = config.uploadsDir;
+const persistentLayoutsDir = path.join(persistentUploadsDir, 'layouts');
+const publicLayoutsDir = path.join(rootDir, 'public', 'layouts');
+
 try {
-  if (!fs.existsSync(config.uploadsDir)) {
-    fs.mkdirSync(config.uploadsDir, { recursive: true });
+  if (!fs.existsSync(persistentUploadsDir)) {
+    fs.mkdirSync(persistentUploadsDir, { recursive: true });
+  }
+  if (!fs.existsSync(persistentLayoutsDir)) {
+    fs.mkdirSync(persistentLayoutsDir, { recursive: true });
+  }
+  if (!fs.existsSync(publicLayoutsDir)) {
+    fs.mkdirSync(publicLayoutsDir, { recursive: true });
   }
 } catch (e) {}
-app.use('/uploads', express.static(config.uploadsDir));
+
+app.use('/uploads', express.static(persistentUploadsDir));
+app.use('/layouts', express.static(persistentLayoutsDir));
+app.use('/layouts', express.static(publicLayoutsDir));
 
 // Initialize Database & Run Migrations
 try {
@@ -89,7 +102,7 @@ if (!process.env.VERCEL) {
     app.use(express.static(distPath));
     // Universal SPA fallback for GET requests that didn't match static files or API
     app.use((req, res, next) => {
-      if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads') && !req.path.startsWith('/layouts')) {
         return res.sendFile(indexHtmlPath);
       }
       next();

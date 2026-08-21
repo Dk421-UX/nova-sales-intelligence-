@@ -140,9 +140,9 @@ CREATE TABLE IF NOT EXISTS properties (
     published_at TEXT NOT NULL
 );
 
--- Compound index and unique constraint: (project_id, property_number, is_superseded)
+-- Compound index and unique constraint: (project_id, property_number, section_or_phase)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_project_property_num_active 
-ON properties(project_id, property_number) 
+ON properties(project_id, property_number, coalesce(section_or_phase, '')) 
 WHERE is_superseded = 0 AND is_archived = 0;
 
 CREATE INDEX IF NOT EXISTS idx_properties_project_status ON properties(project_id, status, is_published, is_superseded, is_archived);
