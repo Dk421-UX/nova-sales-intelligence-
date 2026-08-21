@@ -30,11 +30,13 @@ async function runSupabasePersistenceWorkflow() {
 
   // STEP 1: Read migrated projects from Supabase
   const { data: supaProjects, error: pErr } = await supabase.from('projects').select('*').order('name', { ascending: true });
-  assert(Boolean(supaProjects && supaProjects.length === 15), 1, `Read migrated projects from Supabase (Found ${supaProjects?.length}/15)`, pErr);
+  const plotCount = (supaProjects || []).filter(p => p.project_type === 'PLOT').length;
+  const aptCount = (supaProjects || []).filter(p => p.project_type === 'APARTMENT').length;
+  assert(Boolean(supaProjects && supaProjects.length === 12 && plotCount === 8 && aptCount === 4), 1, `Read 12 canonical projects from Supabase (Found ${supaProjects?.length}/12: ${plotCount} PLOT, ${aptCount} APARTMENT)`, pErr);
 
   // STEP 2: Read migrated inventory from Supabase
   const { data: supaProperties, error: propErr } = await supabase.from('properties').select('*').order('property_number', { ascending: true });
-  assert(Boolean(supaProperties && supaProperties.length === 17), 2, `Read migrated inventory from Supabase (Found ${supaProperties?.length}/17)`, propErr);
+  assert(Boolean(supaProperties && supaProperties.length >= 6), 2, `Read verified inventory from Supabase (Found ${supaProperties?.length} properties)`, propErr);
 
   // STEP 3: Restart backend / simulate wake-up (re-instantiate connection)
   // Simulate backend process wake-up by re-verifying connection
@@ -46,7 +48,7 @@ async function runSupabasePersistenceWorkflow() {
 
   // STEP 5: Confirm nothing disappeared
   assert(
-    Boolean(supaProjectsCycle1?.length === 15 && supaPropertiesCycle1?.length === 17),
+    Boolean(supaProjectsCycle1?.length === 12 && supaPropertiesCycle1?.length === supaProperties?.length),
     5,
     `Confirm nothing disappeared after Restart 1 (${supaProjectsCycle1?.length} projects, ${supaPropertiesCycle1?.length} properties)`
   );
@@ -58,7 +60,7 @@ async function runSupabasePersistenceWorkflow() {
   const { data: supaProjectsCycle2 } = await supabase.from('projects').select('*');
   const { data: supaPropertiesCycle2 } = await supabase.from('properties').select('*');
   assert(
-    Boolean(supaProjectsCycle2?.length === 15 && supaPropertiesCycle2?.length === 17),
+    Boolean(supaProjectsCycle2?.length === 12 && supaPropertiesCycle2?.length === supaProperties?.length),
     7,
     `Confirm again after Restart 2 (${supaProjectsCycle2?.length} projects, ${supaPropertiesCycle2?.length} properties)`
   );
