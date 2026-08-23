@@ -9,7 +9,7 @@ interface ProjectCardProps {
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) => {
   const isApartment = project.project_type === 'APARTMENT';
-  const isInventoryPending = project.status === 'INVENTORY_PENDING' || (project.stats && project.stats.total_inventory === 0);
+  const isInventoryPending = (!project.stats || project.stats.total_inventory === 0);
 
   return (
     <div className="project-card">

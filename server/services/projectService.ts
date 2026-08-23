@@ -96,14 +96,19 @@ function enrichProjectWithStats(db: any, project: any): ProjectDto {
   }
 
   const freshness = calculateFreshness(project.last_verified_at || project.updated_at);
+  const totalInventory = statsRow?.total_inventory || 0;
+  const effectiveStatus = (project.status === 'INVENTORY_PENDING' && totalInventory > 0)
+    ? 'ACTIVE'
+    : project.status;
 
   return {
     ...project,
+    status: effectiveStatus,
     highlights: parsedHighlights,
     amenities: parsedAmenities,
     freshness,
     stats: {
-      total_inventory: statsRow?.total_inventory || 0,
+      total_inventory: totalInventory,
       available: statsRow?.available || 0,
       booked: statsRow?.booked || 0,
       registered: statsRow?.registered || 0,

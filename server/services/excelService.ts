@@ -1087,7 +1087,13 @@ export async function applyImport(
     }
 
     db.prepare('UPDATE imports SET status = ? WHERE id = ?').run('APPLIED', importId);
-    db.prepare('UPDATE projects SET last_verified_at = ?, updated_at = ? WHERE id = ?').run(now, now, projectId);
+    db.prepare(`
+      UPDATE projects 
+      SET status = CASE WHEN status = 'INVENTORY_PENDING' THEN 'ACTIVE' ELSE status END,
+          last_verified_at = ?, 
+          updated_at = ? 
+      WHERE id = ?
+    `).run(now, now, projectId);
 
     recordAuditLog({
       entity_type: 'IMPORT',
