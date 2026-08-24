@@ -1,6 +1,25 @@
-import { RetrievedContext, QueryPlan } from './types.ts';
+import { RetrievedContext, QueryPlan, ResponseProvenance } from './types.ts';
 
 export class AiGroundingEngine {
+  /**
+   * Determine response provenance (GENERAL_KNOWLEDGE | NOVA_DATABASE | NOVA_PROJECT_CONTENT | HYBRID)
+   */
+  determineProvenance(plan: QueryPlan, contexts: RetrievedContext[]): ResponseProvenance {
+    if (plan.intent === 'GENERAL_KNOWLEDGE' || plan.intent === 'GREETING' || plan.responseMode === 'GENERAL_REAL_ESTATE') {
+      return 'GENERAL_KNOWLEDGE';
+    }
+    if (plan.intent === 'MIXED') {
+      return 'HYBRID';
+    }
+    if (contexts.some(c => c.sourceType === 'LIVE_INVENTORY')) {
+      return 'NOVA_DATABASE';
+    }
+    if (contexts.some(c => c.sourceType === 'PROJECT_DATA' || c.sourceType === 'LAYOUT_ANALYSIS')) {
+      return 'NOVA_PROJECT_CONTENT';
+    }
+    return 'GENERAL_KNOWLEDGE';
+  }
+
   /**
    * Validate that the final generated text matches the retrieved database records
    */
@@ -8,12 +27,15 @@ export class AiGroundingEngine {
     rawText: string,
     plan: QueryPlan,
     contexts: RetrievedContext[]
-  ): { text: string; status: 'VERIFIED' | 'HONEST_FALLBACK' | 'GENERAL_ONLY' | 'REJECTED' } {
+  ): { text: string; status: 'VERIFIED' | 'HONEST_FALLBACK' | 'GENERAL_ONLY' | 'REJECTED'; provenance: ResponseProvenance } {
+    const provenance = this.determineProvenance(plan, contexts);
+
     // 1. If intent is UNSUPPORTED / Security boundary
     if (plan.intent === 'UNSUPPORTED') {
       return {
         text: "I am Ask Nova, your property discovery assistant. I can only assist with verified public project information, published property inventory, and layout exploration. I cannot disclose internal operational data or bypass system guidelines.",
-        status: 'REJECTED'
+        status: 'REJECTED',
+        provenance: 'GENERAL_KNOWLEDGE'
       };
     }
 
@@ -21,15 +43,17 @@ export class AiGroundingEngine {
     if (plan.intent === 'CLARIFICATION' && plan.clarificationQuestion) {
       return {
         text: plan.clarificationQuestion,
-        status: 'VERIFIED'
+        status: 'VERIFIED',
+        provenance: 'GENERAL_KNOWLEDGE'
       };
     }
 
-    // 3. If intent is pure GENERAL_KNOWLEDGE
-    if (plan.intent === 'GENERAL_KNOWLEDGE') {
+    // 3. If intent is GREETING or pure GENERAL_KNOWLEDGE / GENERAL_REAL_ESTATE
+    if (plan.intent === 'GREETING' || plan.intent === 'GENERAL_KNOWLEDGE' || plan.responseMode === 'GENERAL_REAL_ESTATE') {
       return {
         text: rawText,
-        status: 'GENERAL_ONLY'
+        status: 'GENERAL_ONLY',
+        provenance: 'GENERAL_KNOWLEDGE'
       };
     }
 
@@ -37,20 +61,22 @@ export class AiGroundingEngine {
     const inventoryContext = contexts.find(c => c.sourceType === 'LIVE_INVENTORY');
     if (inventoryContext) {
       const totalMatches = inventoryContext.data?.totalMatches ?? inventoryContext.records?.length ?? 0;
-      const projectName = inventoryContext.projectName || plan.targetProjectName || 'this project';
+      const projectName = inventoryContext.projectName || plan.targetProjectName || (inventoryContext.data?.crossProject ? 'Nova projects' : 'this project');
 
-      if (totalMatches === 0 && plan.intent === 'INVENTORY_SEARCH') {
+      if (totalMatches === 0 && (plan.intent === 'INVENTORY_SEARCH' || plan.intent === 'APARTMENT_SEARCH' || plan.intent === 'PLOT_SEARCH')) {
         const projNameLower = projectName.toLowerCase();
         if (projNameLower.includes('pinnacle')) {
           return {
             text: "Nova Pinnacle currently has no published plot availability.",
-            status: 'HONEST_FALLBACK'
+            status: 'HONEST_FALLBACK',
+            provenance: 'NOVA_DATABASE'
           };
         }
         if (projNameLower.includes('vasantham')) {
           return {
             text: "Nova Vasantham apartment availability is awaiting verified publication.",
-            status: 'HONEST_FALLBACK'
+            status: 'HONEST_FALLBACK',
+            provenance: 'NOVA_DATABASE'
           };
         }
 
@@ -63,8 +89,9 @@ export class AiGroundingEngine {
         ].filter(Boolean).join(' and ');
 
         return {
-          text: `I searched the live published inventory for **${projectName}**, but I couldn't find any currently available properties matching those requirements${filterDesc ? ` (${filterDesc})` : ''}. Would you like to check other configurations or explore the full project map?`,
-          status: 'HONEST_FALLBACK'
+          text: `I searched the live published inventory for **${projectName}**, but I couldn't find any currently available properties matching those requirements${filterDesc ? ` (${filterDesc})` : ''}. Would you like to check other configurations or explore the full project catalog?`,
+          status: 'HONEST_FALLBACK',
+          provenance: 'NOVA_DATABASE'
         };
       }
 
@@ -74,10 +101,17 @@ export class AiGroundingEngine {
         if (!inventoryContext.records || inventoryContext.records.length === 0) {
           return {
             text: `Property **${reqProp}** was not found in the currently published records for **${projectName}**. It may be unreleased or under processing. Please contact Nova sales staff for assistance.`,
-            status: 'HONEST_FALLBACK'
+            status: 'HONEST_FALLBACK',
+            provenance: 'NOVA_DATABASE'
           };
         }
       }
+    } else if (plan.intent === 'PROPERTY_DETAILS' && plan.propertyNumbers?.[0]) {
+      return {
+        text: `Property **${plan.propertyNumbers[0]}** is not found in published records for **${plan.targetProjectName || 'Nova projects'}**.`,
+        status: 'HONEST_FALLBACK',
+        provenance: 'NOVA_DATABASE'
+      };
     }
 
     // 5. Spatial Claims Grounding
@@ -98,9 +132,12 @@ export class AiGroundingEngine {
 
     return {
       text: cleaned,
-      status: 'VERIFIED'
+      status: 'VERIFIED',
+      provenance
     };
   }
 }
 
 export const aiGroundingEngine = new AiGroundingEngine();
+
+

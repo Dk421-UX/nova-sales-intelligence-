@@ -1,23 +1,39 @@
 export type IntentType =
+  | 'GREETING'
+  | 'GENERAL_CONVERSATION'
+  | 'GENERAL_REAL_ESTATE'
   | 'GENERAL_KNOWLEDGE'
   | 'NOVA_OVERVIEW'
   | 'PROJECT_SEARCH'
   | 'PROJECT_DETAILS'
+  | 'PROJECT_INFORMATION'
+  | 'PROPERTY_SEARCH'
+  | 'APARTMENT_SEARCH'
+  | 'PLOT_SEARCH'
   | 'INVENTORY_SEARCH'
+  | 'AVAILABILITY_SEARCH'
   | 'AVAILABILITY_QUERY'
+  | 'PROPERTY_LOOKUP'
   | 'PROPERTY_DETAILS'
   | 'PROPERTY_COMPARISON'
   | 'LAYOUT_QUERY'
+  | 'PROPERTY_ATTRIBUTE_QUERY'
+  | 'NOVA_COMPANY_QUERY'
   | 'AMENITY_QUERY'
+  | 'LOCATION_SEARCH'
   | 'LOCATION_QUERY'
   | 'RECOMMENDATION'
   | 'DOCUMENT_QUERY'
   | 'MIXED'
+  | 'CLARIFICATION_REQUIRED'
   | 'CLARIFICATION'
+  | 'UNKNOWN'
   | 'UNSUPPORTED';
 
 export type ResponseMode =
   | 'GENERAL'
+  | 'GREETING'
+  | 'GENERAL_REAL_ESTATE'
   | 'NOVA_GENERAL'
   | 'PROJECT_GROUNDED'
   | 'LIVE_INVENTORY'
@@ -50,6 +66,13 @@ export interface NormalizedRecord {
   sectionOrPhase?: string;
   udsSqft?: number;
   saleableAreaSqft?: number;
+  carpetAreaSqft?: number;
+  plinthAreaSqft?: number;
+  projectId?: string;
+  projectName?: string;
+  projectSlug?: string;
+  location?: string;
+  city?: string;
 }
 
 export interface RetrievedContext {
@@ -57,6 +80,7 @@ export interface RetrievedContext {
   sourceId?: string;
   projectId?: string;
   projectName?: string;
+  projectSlug?: string;
   retrievedAt: string;
   publishedState: 'PUBLISHED' | 'OFFICIAL' | 'GENERAL';
   confidence?: SpatialConfidence;
@@ -73,7 +97,31 @@ export interface InventoryFilters {
   propertyType?: string;
   sectionOrPhase?: string;
   location?: string;
+  city?: string;
+  projectSlug?: string;
 }
+
+export interface ConversationContext {
+  projectSlug?: string;
+  projectName?: string;
+  projectId?: string;
+  location?: string;
+  city?: string;
+  propertyType?: 'PLOT' | 'APARTMENT' | 'COMMERCIAL_SHOP';
+  configuration?: string;
+  facing?: string;
+  minArea?: number;
+  maxArea?: number;
+  budget?: number;
+  status?: string;
+  propertyNumber?: string;
+}
+
+export type ContextAction = 'NEW_INDEPENDENT_REQUEST' | 'FOLLOW_UP_REQUEST' | 'CONTINUATION' | 'GENERAL_EDUCATION';
+
+export type SearchScope = 'ALL_NOVA_PROJECTS' | 'LOCATION_SCOPED' | 'SINGLE_PROJECT_SCOPED' | 'NONE';
+
+export type ResponseProvenance = 'GENERAL_KNOWLEDGE' | 'NOVA_DATABASE' | 'NOVA_PROJECT_CONTENT' | 'HYBRID';
 
 export interface QueryPlan {
   intent: IntentType;
@@ -85,6 +133,11 @@ export interface QueryPlan {
   requiresProjectData: boolean;
   requiresLayout: boolean;
   requiresGeneralKnowledge: boolean;
+  crossProjectSearch?: boolean;
+  searchScope?: SearchScope;
+  contextAction?: ContextAction;
+  retainedContext?: Partial<ConversationContext>;
+  clearedContext?: Partial<ConversationContext>;
   filters?: InventoryFilters;
   propertyNumbers?: string[];
   spatialTarget?: {
@@ -105,6 +158,7 @@ export interface AiRequestLog {
   retrievalSources: SourceType[];
   resultCount: number;
   groundingStatus: 'VERIFIED' | 'HONEST_FALLBACK' | 'GENERAL_ONLY' | 'REJECTED';
+  provenance?: ResponseProvenance;
   latencyMs: number;
   errors?: string[];
 }
@@ -116,3 +170,4 @@ export interface ChatMessage {
   tool_calls?: any[];
   name?: string;
 }
+

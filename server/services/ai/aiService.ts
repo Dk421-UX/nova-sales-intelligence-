@@ -35,21 +35,39 @@ export class AIService {
         }
       }
 
-      if (plan.requiresLiveData && plan.targetProjectId) {
-        if (plan.intent === 'PROPERTY_DETAILS' && plan.propertyNumbers?.[0]) {
-          const prop = aiRetrievalLayer.getPublishedProperty(plan.targetProjectId, plan.propertyNumbers[0]);
-          if (prop) {
-            contexts.push(prop);
+      if (plan.requiresLiveData) {
+        if (plan.crossProjectSearch) {
+          if (plan.intent === 'PROPERTY_DETAILS' && plan.propertyNumbers?.[0]) {
+            const prop = aiRetrievalLayer.getPublishedProperty(undefined, plan.propertyNumbers[0]);
+            if (prop) {
+              contexts.push(prop);
+              executedSources.push('LIVE_INVENTORY');
+            }
+          } else if (plan.intent === 'PROPERTY_COMPARISON' && plan.propertyNumbers && plan.propertyNumbers.length > 0) {
+            const comp = aiRetrievalLayer.comparePublishedProperties(undefined, plan.propertyNumbers);
+            contexts.push(comp);
+            executedSources.push('LIVE_INVENTORY');
+          } else {
+            const inv = aiRetrievalLayer.searchPublishedInventoryAcrossProjects(plan.filters || { status: 'AVAILABLE' });
+            contexts.push(inv);
             executedSources.push('LIVE_INVENTORY');
           }
-        } else if (plan.intent === 'PROPERTY_COMPARISON' && plan.propertyNumbers && plan.propertyNumbers.length > 0) {
-          const comp = aiRetrievalLayer.comparePublishedProperties(plan.targetProjectId, plan.propertyNumbers);
-          contexts.push(comp);
-          executedSources.push('LIVE_INVENTORY');
-        } else {
-          const inv = aiRetrievalLayer.searchPublishedInventory(plan.targetProjectId, plan.filters || { status: 'AVAILABLE' });
-          contexts.push(inv);
-          executedSources.push('LIVE_INVENTORY');
+        } else if (plan.targetProjectId) {
+          if (plan.intent === 'PROPERTY_DETAILS' && plan.propertyNumbers?.[0]) {
+            const prop = aiRetrievalLayer.getPublishedProperty(plan.targetProjectId, plan.propertyNumbers[0]);
+            if (prop) {
+              contexts.push(prop);
+              executedSources.push('LIVE_INVENTORY');
+            }
+          } else if (plan.intent === 'PROPERTY_COMPARISON' && plan.propertyNumbers && plan.propertyNumbers.length > 0) {
+            const comp = aiRetrievalLayer.comparePublishedProperties(plan.targetProjectId, plan.propertyNumbers);
+            contexts.push(comp);
+            executedSources.push('LIVE_INVENTORY');
+          } else {
+            const inv = aiRetrievalLayer.searchPublishedInventory(plan.targetProjectId, plan.filters || { status: 'AVAILABLE' });
+            contexts.push(inv);
+            executedSources.push('LIVE_INVENTORY');
+          }
         }
       }
 
@@ -79,6 +97,7 @@ export class AIService {
         retrievalSources: executedSources,
         resultCount: contexts.find(c => c.sourceType === 'LIVE_INVENTORY')?.data?.totalMatches ?? contexts.length,
         groundingStatus: grounded.status,
+        provenance: grounded.provenance,
         latencyMs
       });
 
@@ -87,6 +106,7 @@ export class AIService {
 
       return {
         text: grounded.text,
+        provenance: grounded.provenance,
         executedTools: executedSources.map(s => `query_${s.toLowerCase()}`),
         verifiedData: invContext?.data || contexts[0]?.data || null,
         plan

@@ -16,6 +16,7 @@ interface MessageItem {
   text: string;
   executedTools?: string[];
   verifiedData?: any;
+  provenance?: string;
   timestamp: string;
 }
 
@@ -75,6 +76,7 @@ export const AskNovaAI: React.FC<AskNovaAIProps> = ({
         text: res.answer,
         executedTools: res.executedTools,
         verifiedData: res.verifiedData,
+        provenance: (res as any).provenance,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
@@ -92,12 +94,21 @@ export const AskNovaAI: React.FC<AskNovaAIProps> = ({
     }
   };
 
-  const quickPrompts = [
-    'Show available East-facing properties',
-    'What amenities are in this project?',
-    'Show inventory availability summary',
-    'Show properties above 1500 sq.ft'
-  ];
+  const quickPrompts = currentProjectSlug
+    ? [
+        'Show available properties',
+        'Show North-facing units',
+        'What amenities are in this project?',
+        'Show properties above 1500 sq.ft',
+        'What is UDS?'
+      ]
+    : [
+        'Which Nova projects are in Chennai?',
+        'Do you have any 3 BHK apartments?',
+        'Show available plots',
+        'What is UDS?',
+        'Carpet area vs saleable area'
+      ];
 
   return (
     <div 
@@ -212,7 +223,7 @@ export const AskNovaAI: React.FC<AskNovaAIProps> = ({
               </div>
 
               {/* Clean Customer Verification Badge */}
-              {m.role === 'assistant' && m.id !== 'welcome' && (
+              {m.role === 'assistant' && m.id !== 'welcome' && (m.provenance === 'NOVA_DATABASE' || m.provenance === 'HYBRID' || m.provenance === 'NOVA_PROJECT_CONTENT' || (m.verifiedData && m.provenance !== 'GENERAL_KNOWLEDGE')) && (
                 <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                   <span 
                     style={{
