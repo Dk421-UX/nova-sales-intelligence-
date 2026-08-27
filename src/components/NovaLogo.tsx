@@ -63,7 +63,7 @@ export const NovaLogo: React.FC<NovaLogoProps> = ({
         )}
       </div>
 
-      {/* ViyaanAI Platform & Property Explorer Tag */}
+      {/* Viyaan AI Platform & Property Explorer Tag */}
       {showSubtitle && (
         <div className="brand-text-block">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
@@ -72,7 +72,7 @@ export const NovaLogo: React.FC<NovaLogoProps> = ({
             </span>
           </div>
           <span className="brand-sub-text">
-            ViyaanAI Sales Operating System
+            VIYAAN AI SALES OPERATING SYSTEM
           </span>
         </div>
       )}

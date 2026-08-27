@@ -396,12 +396,32 @@ img {
   width: 100%;
 }
 
+.header-brand-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .brand-logo-wrap {
   display: flex;
   align-items: center;
   gap: 0.85rem;
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.header-separator {
+  width: 1px;
+  height: 26px;
+  background: linear-gradient(
+    to bottom,
+    rgba(212, 175, 55, 0.05),
+    rgba(212, 175, 55, 0.35) 50%,
+    rgba(212, 175, 55, 0.05)
+  );
+  margin: 0 1.15rem; /* ~18px horizontal spacing on both sides */
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .nova-brand-container {
@@ -456,6 +476,13 @@ img {
   text-overflow: ellipsis;
 }
 
+.header-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-shrink: 0;
+}
+
 .nav-links {
   display: flex;
   align-items: center;
@@ -477,6 +504,43 @@ img {
   color: #fff;
 }
 
+/* Viyaan AI Header Brand Badge */
+.viyaan-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  user-select: none;
+  flex-shrink: 0;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.viyaan-header-badge:hover {
+  border-color: rgba(212, 175, 55, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.viyaan-header-logo {
+  height: 22px;
+  width: 22px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+.viyaan-header-text {
+  font-family: var(--font-sans);
+  font-size: 0.88rem; /* ~14px on desktop */
+  font-weight: 600;
+  color: var(--brand-gold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 /* Desktop-only nav hidden on mobile */
 .desktop-only {
   display: flex;
@@ -490,6 +554,23 @@ img {
 /* Mobile Nav Drawer animation */
 .mobile-nav-drawer {
   animation: slideDown 0.2s ease forwards;
+}
+
+.mobile-drawer-brand {
+  margin-top: 0.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobile-drawer-brand-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
 }
 
 /* ============================================================
@@ -926,14 +1007,66 @@ img {
     padding-right: 1.25rem;
   }
 
+  .header-nav-group {
+    gap: 0.85rem;
+  }
+
+  .nav-links {
+    gap: 0.85rem;
+  }
+
+  .header-separator {
+    margin: 0 0.75rem;
+  }
+
   .projects-grid {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1.5rem;
   }
 }
 
-/* Medium Mobile */
+/* Medium Mobile / Small Tablet */
 @media (max-width: 900px) {
+  .header-inner {
+    gap: 0.5rem;
+  }
+
+  .header-nav-group {
+    gap: 0.45rem;
+  }
+
+  .nav-links {
+    gap: 0.45rem;
+  }
+
+  .nav-link {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.2rem;
+  }
+
+  .header-nav-group .btn-sm {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .header-separator {
+    margin: 0 0.4rem;
+  }
+
+  .viyaan-header-badge {
+    padding: 0.2rem 0.45rem;
+    gap: 0.3rem;
+  }
+
+  .viyaan-header-logo {
+    height: 18px;
+    width: 18px;
+  }
+
+  .viyaan-header-text {
+    font-size: 0.78rem;
+  }
+
   .layout-viewer-container {
     flex-direction: column;
     height: auto;

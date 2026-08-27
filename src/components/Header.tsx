@@ -15,55 +15,72 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate, onOpenA
   return (
     <header className="site-header">
       <div className="max-w-7xl header-inner">
-        <div 
-          className="brand-logo-wrap" 
-          style={{ cursor: 'pointer', minWidth: 0 }}
-          onClick={() => {
-            onNavigate('home');
-            setMobileMenuOpen(false);
-          }}
-        >
-          <NovaLogo height={32} />
+        <div className="header-brand-group">
+          <div 
+            className="brand-logo-wrap" 
+            style={{ cursor: 'pointer', minWidth: 0 }}
+            onClick={() => {
+              onNavigate('home');
+              setMobileMenuOpen(false);
+            }}
+          >
+            <NovaLogo height={32} />
+          </div>
+
+          {/* Subtle Vertical Separator between NOVA brand and navigation */}
+          <div className="header-separator desktop-only" aria-hidden="true" />
         </div>
 
-        {/* Desktop Navigation */}
-        <nav className="nav-links desktop-only">
-          <button 
-            className={`nav-link ${currentView === 'home' ? 'active' : ''}`}
-            onClick={() => onNavigate('home')}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <Compass size={17} /> Explore Projects
-          </button>
+        {/* Desktop Navigation & Viyaan AI Brand Label */}
+        <div className="header-nav-group desktop-only">
+          <nav className="nav-links">
+            <button 
+              className={`nav-link ${currentView === 'home' ? 'active' : ''}`}
+              onClick={() => onNavigate('home')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Compass size={17} /> Explore Projects
+            </button>
 
-          <a 
-            href="https://novalifespace.in" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="nav-link"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}
-            title="Visit Nova Official Website"
-          >
-            <span>Official Site</span>
-            <ExternalLink size={13} />
-          </a>
+            <a 
+              href="https://novalifespace.in" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="nav-link"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}
+              title="Visit Nova Official Website"
+            >
+              <span>Official Site</span>
+              <ExternalLink size={13} />
+            </a>
 
-          <button 
-            className="btn btn-outline-gold btn-sm"
-            onClick={onOpenAi}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.45rem 0.9rem' }}
-          >
-            <Sparkles size={16} /> Ask Nova AI
-          </button>
+            <button 
+              className="btn btn-outline-gold btn-sm"
+              onClick={onOpenAi}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.45rem 0.9rem' }}
+            >
+              <Sparkles size={16} /> Ask Nova AI
+            </button>
 
-          <button 
-            className={`btn btn-secondary btn-sm ${isCrm ? 'btn-primary' : ''}`}
-            onClick={() => onNavigate(localStorage.getItem('nova_auth_token') ? 'crm' : 'login')}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
-          >
-            <Shield size={16} /> {localStorage.getItem('nova_auth_token') ? 'Nova Staff CRM' : 'Staff Login'}
-          </button>
-        </nav>
+            <button 
+              className={`btn btn-secondary btn-sm ${isCrm ? 'btn-primary' : ''}`}
+              onClick={() => onNavigate(localStorage.getItem('nova_auth_token') ? 'crm' : 'login')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+            >
+              <Shield size={16} /> {localStorage.getItem('nova_auth_token') ? 'Nova Staff CRM' : 'Staff Login'}
+            </button>
+          </nav>
+
+          {/* Viyaan AI Brand Badge */}
+          <div className="viyaan-header-badge" title="Viyaan AI Sales Operating System">
+            <img 
+              src="/viyaan-ai-logo.png" 
+              alt="Viyaan AI" 
+              className="viyaan-header-logo"
+            />
+            <span className="viyaan-header-text">Viyaan AI</span>
+          </div>
+        </div>
 
         {/* Mobile Header Actions */}
         <div className="mobile-header-actions">
@@ -144,6 +161,19 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate, onOpenA
           >
             <Shield size={16} /> {localStorage.getItem('nova_auth_token') ? 'Nova Staff CRM' : 'Staff Login'}
           </button>
+
+          {/* Mobile Drawer Viyaan AI Brand Badge */}
+          <div className="mobile-drawer-brand">
+            <span className="mobile-drawer-brand-label">Platform</span>
+            <div className="viyaan-header-badge">
+              <img 
+                src="/viyaan-ai-logo.png" 
+                alt="Viyaan AI" 
+                className="viyaan-header-logo"
+              />
+              <span className="viyaan-header-text">Viyaan AI</span>
+            </div>
+          </div>
         </div>
       )}
     </header>

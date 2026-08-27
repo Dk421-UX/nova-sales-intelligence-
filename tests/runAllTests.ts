@@ -391,6 +391,29 @@ async function runSuite() {
   assert(aging.status === 'AGING', '48 hours timestamp classified as AGING (24-72h)');
 
   // -------------------------------------------------------------
+  // TEST GROUP 13: Viyaan AI Branding & Header Integrity
+  // -------------------------------------------------------------
+  console.log('\n--- TEST GROUP 13: Viyaan AI Branding & Header Integrity ---');
+  const rootDir = process.cwd();
+  const logoPng = path.join(rootDir, 'public', 'viyaan-ai-logo.png');
+  assert(fs.existsSync(logoPng) && fs.statSync(logoPng).size > 1000, 'Official Viyaan AI logo asset is present in public/ directory');
+
+  const novaLogoContent = fs.readFileSync(path.join(rootDir, 'src', 'components', 'NovaLogo.tsx'), 'utf-8');
+  assert(novaLogoContent.includes('VIYAAN AI SALES OPERATING SYSTEM'), 'NovaLogo contains "VIYAAN AI SALES OPERATING SYSTEM" with space between VIYAAN and AI');
+  assert(!novaLogoContent.includes('ViyaanAI Sales Operating System'), 'NovaLogo does not contain old unspaced ViyaanAI');
+
+  const headerContent = fs.readFileSync(path.join(rootDir, 'src', 'components', 'Header.tsx'), 'utf-8');
+  assert(headerContent.includes('header-separator desktop-only'), 'Header has desktop subtle separator');
+  assert(headerContent.includes('viyaan-header-badge'), 'Header contains Viyaan AI brand badge');
+  assert(headerContent.includes('Viyaan AI</span>'), 'Header displays "Viyaan AI" text with exact spacing');
+
+  const indexCssContent = fs.readFileSync(path.join(rootDir, 'src', 'index.css'), 'utf-8');
+  assert(indexCssContent.includes('.header-separator'), 'CSS defines .header-separator');
+  assert(indexCssContent.includes('.viyaan-header-badge'), 'CSS defines .viyaan-header-badge');
+  assert(indexCssContent.includes('.viyaan-header-logo'), 'CSS defines .viyaan-header-logo');
+  assert(indexCssContent.includes('.viyaan-header-text'), 'CSS defines .viyaan-header-text');
+
+  // -------------------------------------------------------------
   // SUMMARY & CLEANUP
   // -------------------------------------------------------------
   closeDb();
