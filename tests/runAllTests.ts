@@ -414,6 +414,35 @@ async function runSuite() {
   assert(indexCssContent.includes('.viyaan-header-text'), 'CSS defines .viyaan-header-text');
 
   // -------------------------------------------------------------
+  // TEST GROUP 14: Interactive Status Filter & Synchronization Contract
+  // -------------------------------------------------------------
+  console.log('\n--- TEST GROUP 14: Interactive Status Filter & Synchronization Contract ---');
+  const layoutViewerCode = fs.readFileSync(path.join(rootDir, 'src', 'components', 'Customer', 'InteractiveLayoutViewer.tsx'), 'utf-8');
+  const projectViewCode = fs.readFileSync(path.join(rootDir, 'src', 'views', 'CustomerProjectView.tsx'), 'utf-8');
+
+  // Verify InteractiveLayoutViewer props and interactive buttons
+  assert(layoutViewerCode.includes('statusFilter?: string;'), 'InteractiveLayoutViewer accepts statusFilter prop');
+  assert(layoutViewerCode.includes('onStatusFilterChange?: (status: string) => void;'), 'InteractiveLayoutViewer accepts onStatusFilterChange prop');
+  assert(layoutViewerCode.includes("onClick={() => onStatusFilterChange?.('ALL')}"), 'Status summary includes clickable All Plots filter button');
+  assert(layoutViewerCode.includes("onStatusFilterChange?.(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')"), 'Available status badge toggles/applies AVAILABLE filter');
+  assert(layoutViewerCode.includes("onStatusFilterChange?.(statusFilter === 'BOOKED' ? 'ALL' : 'BOOKED')"), 'Booked status badge toggles/applies BOOKED filter');
+  assert(layoutViewerCode.includes("onStatusFilterChange?.(statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? 'ALL' : 'SOLD')"), 'Sold status badge toggles/applies SOLD filter');
+
+  // Verify CustomerProjectView synchronizes statusFilter with InteractiveLayoutViewer
+  assert(projectViewCode.includes('statusFilter={statusFilter}'), 'CustomerProjectView passes statusFilter to InteractiveLayoutViewer');
+  assert(projectViewCode.includes('onStatusFilterChange={setStatusFilter}'), 'CustomerProjectView passes setStatusFilter handler to InteractiveLayoutViewer');
+
+  // Verify Authoritative inventory counts are persistent
+  assert(layoutViewerCode.includes("const availableCount = properties.filter(p => p.status === 'AVAILABLE').length"), 'Available count computed persistently from full project properties');
+  assert(layoutViewerCode.includes("const bookedCount = properties.filter(p => p.status === 'BOOKED').length"), 'Booked count computed persistently from full project properties');
+  assert(layoutViewerCode.includes("const soldCount = properties.filter(p => p.status === 'REGISTERED' || p.status === 'SOLD').length"), 'Sold count computed persistently from full project properties');
+
+  // Verify empty state handling
+  assert(layoutViewerCode.includes('No booked properties found.'), 'Empty state provides clear message when zero booked properties match');
+  assert(layoutViewerCode.includes('No sold properties found.'), 'Empty state provides clear message when zero sold properties match');
+  assert(layoutViewerCode.includes('No available properties found.'), 'Empty state provides clear message when zero available properties match');
+
+  // -------------------------------------------------------------
   // SUMMARY & CLEANUP
   // -------------------------------------------------------------
   closeDb();

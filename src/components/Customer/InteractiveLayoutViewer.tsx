@@ -16,6 +16,8 @@ interface LayoutViewerProps {
   filteredPropertyIds: Set<string>;
   comparisonIds: string[];
   onToggleCompare: (propertyId: string) => void;
+  statusFilter?: string;
+  onStatusFilterChange?: (status: string) => void;
 }
 
 export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
@@ -25,7 +27,9 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
   onSelectProperty,
   filteredPropertyIds,
   comparisonIds,
-  onToggleCompare
+  onToggleCompare,
+  statusFilter = 'ALL',
+  onStatusFilterChange
 }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -187,6 +191,12 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
 
   const viewBox = layout?.viewbox || '0 0 1191 842';
 
+  // Authoritative Inventory Status Counts (persistent across filtering)
+  const totalCount = properties.length;
+  const availableCount = properties.filter(p => p.status === 'AVAILABLE').length;
+  const bookedCount = properties.filter(p => p.status === 'BOOKED').length;
+  const soldCount = properties.filter(p => p.status === 'REGISTERED' || p.status === 'SOLD').length;
+
   // Filtered properties matching search query
   const searchedProperties = properties.filter(p => {
     if (!filteredPropertyIds.has(p.id)) return false;
@@ -255,7 +265,13 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
         {/* Responsive Grid of Verified Property Cards */}
         {searchedProperties.length === 0 ? (
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '3rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No properties match your current search/filter criteria. Try adjusting the filters above.
+            {statusFilter === 'BOOKED' && bookedCount === 0 
+              ? 'No booked properties found.'
+              : (statusFilter === 'SOLD' || statusFilter === 'REGISTERED') && soldCount === 0
+              ? 'No sold properties found.'
+              : statusFilter === 'AVAILABLE' && availableCount === 0
+              ? 'No available properties found.'
+              : 'No properties match your current search/filter criteria. Try adjusting the filters above.'}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
@@ -802,22 +818,102 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
               </span>
             </div>
 
-            {/* Exact Inventory Status Badges */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem' }}>
-              <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 600 }}>
-                {searchedProperties.length} {searchedProperties.length === 1 ? 'Plot' : 'Plots'}
-              </span>
-              <span style={{ background: 'rgba(16, 185, 129, 0.12)', color: 'var(--status-available)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                {searchedProperties.filter(p => p.status === 'AVAILABLE').length} Available
-              </span>
-              <span style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--status-booked)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
-                {searchedProperties.filter(p => p.status === 'BOOKED').length} Booked
-              </span>
-              {searchedProperties.some(p => p.status === 'REGISTERED' || p.status === 'SOLD') && (
-                <span style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
-                  {searchedProperties.filter(p => p.status === 'REGISTERED' || p.status === 'SOLD').length} Sold
-                </span>
-              )}
+            {/* Exact Inventory Status Badges & Interactive Status Filters */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => onStatusFilterChange?.('ALL')}
+                title="Show All Statuses"
+                style={{
+                  background: statusFilter === 'ALL' || !statusFilter ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.06)',
+                  color: '#fff',
+                  padding: '0.25rem 0.55rem',
+                  borderRadius: 'var(--radius-xs)',
+                  border: statusFilter === 'ALL' || !statusFilter ? '1px solid rgba(255, 255, 255, 0.45)' : '1px solid rgba(255, 255, 255, 0.12)',
+                  fontWeight: statusFilter === 'ALL' || !statusFilter ? 700 : 600,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease',
+                  boxShadow: statusFilter === 'ALL' || !statusFilter ? '0 0 8px rgba(255, 255, 255, 0.15)' : 'none'
+                }}
+              >
+                <span>{totalCount} {totalCount === 1 ? 'Plot' : 'Plots'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onStatusFilterChange?.(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
+                title="Filter by Available Status"
+                style={{
+                  background: statusFilter === 'AVAILABLE' ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.12)',
+                  color: statusFilter === 'AVAILABLE' ? '#fff' : 'var(--status-available)',
+                  padding: '0.25rem 0.55rem',
+                  borderRadius: 'var(--radius-xs)',
+                  border: statusFilter === 'AVAILABLE' ? '1px solid var(--status-available)' : '1px solid rgba(16, 185, 129, 0.25)',
+                  fontWeight: statusFilter === 'AVAILABLE' ? 700 : 600,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease',
+                  boxShadow: statusFilter === 'AVAILABLE' ? '0 0 10px rgba(16, 185, 129, 0.4)' : 'none'
+                }}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--status-available)', display: 'inline-block' }}></span>
+                <span>{availableCount} Available</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onStatusFilterChange?.(statusFilter === 'BOOKED' ? 'ALL' : 'BOOKED')}
+                title="Filter by Booked Status"
+                style={{
+                  background: statusFilter === 'BOOKED' ? 'rgba(245, 158, 11, 0.28)' : 'rgba(245, 158, 11, 0.12)',
+                  color: statusFilter === 'BOOKED' ? '#fff' : 'var(--status-booked)',
+                  padding: '0.25rem 0.55rem',
+                  borderRadius: 'var(--radius-xs)',
+                  border: statusFilter === 'BOOKED' ? '1px solid var(--status-booked)' : '1px solid rgba(245, 158, 11, 0.25)',
+                  fontWeight: statusFilter === 'BOOKED' ? 700 : 600,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease',
+                  boxShadow: statusFilter === 'BOOKED' ? '0 0 10px rgba(245, 158, 11, 0.4)' : 'none'
+                }}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--status-booked)', display: 'inline-block' }}></span>
+                <span>{bookedCount} Booked</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onStatusFilterChange?.(statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? 'ALL' : 'SOLD')}
+                title="Filter by Sold Status"
+                style={{
+                  background: statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? 'rgba(239, 68, 68, 0.28)' : 'rgba(239, 68, 68, 0.12)',
+                  color: statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? '#fff' : '#ef4444',
+                  padding: '0.25rem 0.55rem',
+                  borderRadius: 'var(--radius-xs)',
+                  border: statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.25)',
+                  fontWeight: statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? 700 : 600,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease',
+                  boxShadow: statusFilter === 'SOLD' || statusFilter === 'REGISTERED' ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none'
+                }}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+                <span>{soldCount} Sold</span>
+              </button>
             </div>
           </div>
 
@@ -864,8 +960,14 @@ export const InteractiveLayoutViewer: React.FC<LayoutViewerProps> = ({
 
         {/* Complete Inventory Rendering — Every plot is accessible and clickable */}
         {searchedProperties.length === 0 ? (
-          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            No properties match the current search or filters.
+          <div style={{ padding: '2rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+            {statusFilter === 'BOOKED' && bookedCount === 0 
+              ? 'No booked properties found.'
+              : (statusFilter === 'SOLD' || statusFilter === 'REGISTERED') && soldCount === 0
+              ? 'No sold properties found.'
+              : statusFilter === 'AVAILABLE' && availableCount === 0
+              ? 'No available properties found.'
+              : 'No properties match the current search or filters.'}
           </div>
         ) : directoryMode === 'SHELF' ? (
           /* Horizontal Scroll Shelf with ALL Plots */

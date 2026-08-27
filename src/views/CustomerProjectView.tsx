@@ -67,7 +67,13 @@ export const CustomerProjectView: React.FC<CustomerProjectViewProps> = ({ projec
   // Compute filtered properties
   const filteredProperties = properties.filter(p => {
     if (facingFilter !== 'ALL' && (!p.facing || !p.facing.toLowerCase().includes(facingFilter.toLowerCase()))) return false;
-    if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'SOLD') {
+        if (p.status !== 'SOLD' && p.status !== 'REGISTERED') return false;
+      } else if (p.status !== statusFilter) {
+        return false;
+      }
+    }
     if (minArea !== '' && ((p.area_sqft || p.saleable_area_sqft || 0) < minArea)) return false;
     if (maxArea !== '' && ((p.area_sqft || p.saleable_area_sqft || 0) > maxArea)) return false;
     if (sectionFilter !== 'ALL' && p.section_or_phase !== sectionFilter) return false;
@@ -291,6 +297,8 @@ export const CustomerProjectView: React.FC<CustomerProjectViewProps> = ({ projec
                 filteredPropertyIds={filteredPropertyIds}
                 comparisonIds={comparisonIds}
                 onToggleCompare={handleToggleCompare}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
               />
             </div>
 
