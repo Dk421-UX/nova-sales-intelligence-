@@ -13,7 +13,7 @@ publicRouter.get('/projects', (req: Request, res: Response) => {
     const projects = getAllProjects(false);
     res.json({ success: true, projects });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch projects.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch projects.' });
   }
 });
 
@@ -22,11 +22,11 @@ publicRouter.get('/projects/:slug', (req: Request, res: Response) => {
   try {
     const project = getProjectBySlug(req.params.slug as string, false);
     if (!project) {
-      return res.status(404).json({ error: `Project '${req.params.slug}' not found or not published.` });
+      return res.status(404).json({ success: false, error: `Project '${req.params.slug}' not found or not published.` });
     }
     res.json({ success: true, project });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch project.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch project.' });
   }
 });
 
@@ -35,12 +35,12 @@ publicRouter.get('/projects/:slug/layout', (req: Request, res: Response) => {
   try {
     const project = getProjectBySlug(req.params.slug as string, false);
     if (!project) {
-      return res.status(404).json({ error: `Project '${req.params.slug}' not found.` });
+      return res.status(404).json({ success: false, error: `Project '${req.params.slug}' not found.` });
     }
     const layout = getProjectLayout(project.id);
     res.json({ success: true, layout });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch layout.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch layout.' });
   }
 });
 
@@ -49,12 +49,12 @@ publicRouter.get('/projects/:slug/layout-analysis', (req: Request, res: Response
   try {
     const project = getProjectBySlug(req.params.slug as string, false);
     if (!project) {
-      return res.status(404).json({ error: `Project '${req.params.slug}' not found.` });
+      return res.status(404).json({ success: false, error: `Project '${req.params.slug}' not found.` });
     }
     const analysis = layoutAnalysisService.getLayoutAnalysis(project.id);
     res.json({ success: true, analysis });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch layout analysis.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch layout analysis.' });
   }
 });
 
@@ -63,12 +63,12 @@ publicRouter.get('/projects/:slug/buildings', (req: Request, res: Response) => {
   try {
     const project = getProjectBySlug(req.params.slug as string, false);
     if (!project) {
-      return res.status(404).json({ error: `Project '${req.params.slug}' not found.` });
+      return res.status(404).json({ success: false, error: `Project '${req.params.slug}' not found.` });
     }
     const buildings = getProjectBuildings(project.id);
     res.json({ success: true, buildings });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch buildings.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch buildings.' });
   }
 });
 
@@ -97,7 +97,7 @@ publicRouter.get('/properties', (req: Request, res: Response) => {
     const result = getProperties(filter);
     res.json({ success: true, total: result.total, properties: result.properties });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to search properties.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to search properties.' });
   }
 });
 
@@ -106,11 +106,11 @@ publicRouter.get('/properties/:id', (req: Request, res: Response) => {
   try {
     const property = getPropertyById(req.params.id as string);
     if (!property || property.is_archived || property.is_superseded) {
-      return res.status(404).json({ error: 'Property not found or is no longer available.' });
+      return res.status(404).json({ success: false, error: 'Property not found or is no longer available.' });
     }
     res.json({ success: true, property });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch property.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch property.' });
   }
 });
 
@@ -119,12 +119,12 @@ publicRouter.post('/properties/compare', (req: Request, res: Response) => {
   try {
     const { propertyIds } = req.body;
     if (!Array.isArray(propertyIds) || propertyIds.length === 0) {
-      return res.status(400).json({ error: 'propertyIds array is required.' });
+      return res.status(400).json({ success: false, error: 'propertyIds array is required.' });
     }
     const comparison = compareProperties(propertyIds);
     res.json({ success: true, comparison });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to compare properties.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to compare properties.' });
   }
 });
 
@@ -133,7 +133,7 @@ publicRouter.post('/enquiries', (req: Request, res: Response) => {
   try {
     const { projectId, propertyId, customerName, customerPhone, customerEmail, message } = req.body;
     if (!projectId || !customerName || !customerPhone) {
-      return res.status(400).json({ error: 'Project, Customer Name, and Phone Number are required.' });
+      return res.status(400).json({ success: false, error: 'Project, Customer Name, and Phone Number are required.' });
     }
 
     const db = getDb();
@@ -147,7 +147,7 @@ publicRouter.post('/enquiries', (req: Request, res: Response) => {
 
     res.json({ success: true, enquiryId: id, message: 'Thank you! Our Nova property specialist will get in touch with you shortly.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to submit enquiry.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to submit enquiry.' });
   }
 });
 
@@ -157,7 +157,7 @@ publicRouter.get('/branding', (req: Request, res: Response) => {
     const branding = officialWebsiteService.getBranding();
     res.json({ success: true, branding });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch official branding.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch official branding.' });
   }
 });
 
@@ -167,7 +167,7 @@ publicRouter.get('/projects/:slug/official-content', (req: Request, res: Respons
     const content = officialWebsiteService.getProjectContent(req.params.slug as string);
     res.json({ success: true, content });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch official project content.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch official project content.' });
   }
 });
 

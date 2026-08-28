@@ -30,41 +30,111 @@ const secondaryTables = [
 // Startup hydration state tracker
 let hydrationPromise: Promise<boolean> | null = null;
 let isHydrationComplete = false;
+let hydrationError: string | null = null;
 
 /**
- * Returns true if initial hydration from Supabase has completed.
+ * Returns true if initial hydration from Supabase has completed successfully.
  */
 export function isHydrated(): boolean {
-  return isHydrationComplete || !isSupabaseConfigured();
+  return isHydrationComplete || (!isSupabaseConfigured() && config.nodeEnv !== 'production');
+}
+
+/**
+ * Returns the last hydration error, if any.
+ */
+export function getHydrationError(): string | null {
+  return hydrationError;
 }
 
 /**
  * Awaitable promise that ensures Supabase data has synced before serving requests.
  */
 export async function waitForHydration(): Promise<boolean> {
-  if (isHydrationComplete || !isSupabaseConfigured()) return true;
+  if (isHydrationComplete) return true;
+  if (!isSupabaseConfigured()) {
+    if (config.nodeEnv === 'production') {
+      throw new Error('[SupabaseSync FATAL] Production mode requires Supabase PostgreSQL. Missing configuration.');
+    }
+    return true;
+  }
   if (hydrationPromise) {
     return hydrationPromise;
   }
-  return true;
+  return initAndSyncFromSupabase();
 }
 
 /**
- * Helper to hydrate a list of tables from Supabase into SQLite using batched inserts.
+ * Helper to fetch all records from a Supabase table with robust pagination and retries.
  */
-async function hydrateTableBatch(supabase: any, db: any, tables: string[]): Promise<void> {
-  const fetchPromises = tables.map(async (table) => {
-    try {
-      const { data: rows, error: rowErr } = await supabase.from(table).select('*');
-      if (rowErr) {
-        console.warn(`[SupabaseSync] Warning querying table ${table}:`, rowErr.message);
-        return { table, rows: [] };
+async function fetchAllRowsFromSupabase(supabase: any, table: string, isCoreTable: boolean): Promise<any[]> {
+  const pageSize = 1000;
+  let allRows: any[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  const maxRetries = isCoreTable ? 3 : 1;
+
+  while (hasMore) {
+    let success = false;
+    let lastErr: any = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .range(from, to);
+
+        if (error) {
+          lastErr = error;
+          console.warn(`[SupabaseSync] Query error for ${table} (attempt ${attempt}/${maxRetries}): ${error.message}`);
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 500 * attempt));
+            continue;
+          }
+        } else {
+          const rows = data || [];
+          allRows = allRows.concat(rows);
+          if (rows.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+          success = true;
+          break;
+        }
+      } catch (err: any) {
+        lastErr = err;
+        console.warn(`[SupabaseSync] Query exception for ${table} (attempt ${attempt}/${maxRetries}): ${err.message}`);
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
       }
-      return { table, rows: rows || [] };
-    } catch (err: any) {
-      console.warn(`[SupabaseSync] Exception fetching table ${table}:`, err.message);
-      return { table, rows: [] };
     }
+
+    if (!success) {
+      if (isCoreTable) {
+        throw new Error(`Failed to fetch required core table '${table}' from Supabase after ${maxRetries} attempts: ${lastErr?.message || 'Unknown error'}`);
+      } else {
+        console.warn(`[SupabaseSync] Non-core table '${table}' could not be fetched. Continuing with empty set.`);
+        return allRows;
+      }
+    }
+  }
+
+  return allRows;
+}
+
+/**
+ * Helper to hydrate a list of tables from Supabase into SQLite using batched inserts and exact mirror cleanup.
+ */
+async function hydrateTableBatch(supabase: any, db: any, tables: string[], isCore: boolean): Promise<void> {
+  const fetchPromises = tables.map(async (table) => {
+    const rows = await fetchAllRowsFromSupabase(supabase, table, isCore);
+    return { table, rows };
   });
 
   const results = await Promise.all(fetchPromises);
@@ -83,7 +153,29 @@ async function hydrateTableBatch(supabase: any, db: any, tables: string[]): Prom
           const vals = cols.map(c => item[c] === undefined ? null : item[c]);
           insertStmt.run(...vals);
         }
+
+        // For core catalog tables, clean up any orphaned records not present in authoritative Supabase dataset
+        if (isCore && ['projects', 'layouts', 'buildings', 'floors', 'properties'].includes(table)) {
+          const validIds = rows.map(r => r.id).filter(Boolean);
+          if (validIds.length > 0) {
+            // Delete records from local SQLite that do not exist in Supabase
+            const placeholdersIds = validIds.map(() => '?').join(', ');
+            try {
+              db.prepare(`DELETE FROM "${table}" WHERE id NOT IN (${placeholdersIds})`).run(...validIds);
+            } catch (delErr: any) {
+              console.warn(`[SupabaseSync] Mirror cleanup notice for ${table}:`, delErr.message);
+            }
+          }
+        }
+
         console.log(`[SupabaseSync] Synced table [${table}]: ${rows.length} records hydrated from Supabase.`);
+      } else {
+        // If Supabase table is empty, ensure local SQLite table is also empty for exact parity
+        if (isCore && table === 'projects') {
+          if (config.nodeEnv === 'production') {
+            throw new Error(`[SupabaseSync FATAL] Authoritative 'projects' table in Supabase returned 0 rows in production!`);
+          }
+        }
       }
     }
   })();
@@ -93,22 +185,26 @@ async function hydrateTableBatch(supabase: any, db: any, tables: string[]): Prom
  * Initializes and synchronizes the application cache from Supabase PostgreSQL.
  * On server startup (or serverless wake-up), this pulls the permanent production dataset
  * from Supabase so the application always serves authoritative cloud data.
- * NON-DESTRUCTIVE: Uses INSERT OR REPLACE into local cache without dropping existing records.
  */
 export async function initAndSyncFromSupabase(): Promise<boolean> {
   if (!isSupabaseConfigured()) {
     if (config.nodeEnv === 'production') {
-      throw new Error('[SupabaseSync FATAL] SUPABASE_URL and service keys are missing in production.');
+      const msg = '[SupabaseSync FATAL] SUPABASE_URL and service keys are missing in production.';
+      hydrationError = msg;
+      throw new Error(msg);
     }
     console.log('[SupabaseSync] Supabase not configured in local environment; using local database.');
     isHydrationComplete = true;
+    hydrationError = null;
     return false;
   }
 
   const supabase = getSupabaseAdmin();
   if (!supabase) {
+    const msg = '[SupabaseSync FATAL] Supabase admin client initialization failed.';
+    hydrationError = msg;
     if (config.nodeEnv === 'production') {
-      throw new Error('[SupabaseSync FATAL] Supabase admin client initialization failed in production.');
+      throw new Error(msg);
     }
     isHydrationComplete = true;
     return false;
@@ -127,12 +223,13 @@ export async function initAndSyncFromSupabase(): Promise<boolean> {
       db.pragma('foreign_keys = OFF');
 
       try {
-        // Step 1: Hydrate core customer-facing tables in parallel for sub-second startup
+        // Step 1: Hydrate core customer-facing tables with fail-closed guarantee
         console.log('[SupabaseSync] Hydrating Core Catalog (projects, layouts, properties, buildings, floors)...');
-        await hydrateTableBatch(supabase, db, coreTables);
+        await hydrateTableBatch(supabase, db, coreTables, true);
 
-        // Step 2: Hydrate secondary operational tables in parallel
-        await hydrateTableBatch(supabase, db, secondaryTables);
+        // Step 2: Hydrate secondary operational tables
+        console.log('[SupabaseSync] Hydrating Operational Tables...');
+        await hydrateTableBatch(supabase, db, secondaryTables, false);
 
         // Step 3: Cleanup legacy non-persisted local layout paths in SQLite if authoritative Supabase URLs are loaded
         try {
@@ -157,15 +254,19 @@ export async function initAndSyncFromSupabase(): Promise<boolean> {
       }
 
       isHydrationComplete = true;
+      hydrationError = null;
       console.log(`[SupabaseSync] ✓ Permanent Supabase synchronization completed in ${Date.now() - syncStartTime}ms.`);
       return true;
 
     } catch (err: any) {
+      isHydrationComplete = false;
+      hydrationError = err.message;
       console.error('[SupabaseSync] Synchronization error:', err.message);
+      // Reset hydrationPromise so retries are possible
+      hydrationPromise = null;
       if (config.nodeEnv === 'production') {
         throw err;
       }
-      isHydrationComplete = true;
       return false;
     }
   })();
@@ -260,4 +361,3 @@ export async function deleteEntityFromSupabase(table: string, id: string): Promi
     return false;
   }
 }
-

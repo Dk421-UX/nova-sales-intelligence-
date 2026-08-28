@@ -105,6 +105,15 @@ const readinessMiddleware = async (req: express.Request, res: express.Response, 
     next();
   } catch (err: any) {
     console.error('[Readiness Middleware Error]:', err.message);
+    if (config.nodeEnv === 'production' || isSupabaseConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Production property data is temporarily synchronizing or unavailable. Please retry in a few moments.'
+        }
+      });
+    }
     next();
   }
 };

@@ -134,19 +134,59 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <CheckCircle2 size={15} color="var(--brand-gold)" />
-                <span><strong style={{ color: '#fff' }}>{totalProjectsCount}</strong> Projects</span>
+                <span>
+                  <strong style={{ color: '#fff' }}>
+                    {isLoading ? (
+                      <span className="animate-pulse" style={{ display: 'inline-block', width: '24px', height: '14px', background: 'rgba(255,255,255,0.2)', borderRadius: '3px', verticalAlign: 'middle' }} />
+                    ) : error ? (
+                      '—'
+                    ) : (
+                      totalProjectsCount
+                    )}
+                  </strong> Projects
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <CheckCircle2 size={15} color="var(--status-available)" />
-                <span><strong style={{ color: 'var(--status-available)' }}>{totalAvailableAcrossProjects}</strong> Available Properties</span>
+                <span>
+                  <strong style={{ color: 'var(--status-available)' }}>
+                    {isLoading ? (
+                      <span className="animate-pulse" style={{ display: 'inline-block', width: '28px', height: '14px', background: 'rgba(34,197,94,0.3)', borderRadius: '3px', verticalAlign: 'middle' }} />
+                    ) : error ? (
+                      '—'
+                    ) : (
+                      totalAvailableAcrossProjects
+                    )}
+                  </strong> Available Properties
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <Layers size={15} color="var(--accent-cyan)" />
-                <span><strong style={{ color: '#fff' }}>{plotProjects}</strong> Plot Projects</span>
+                <span>
+                  <strong style={{ color: '#fff' }}>
+                    {isLoading ? (
+                      <span className="animate-pulse" style={{ display: 'inline-block', width: '20px', height: '14px', background: 'rgba(255,255,255,0.2)', borderRadius: '3px', verticalAlign: 'middle' }} />
+                    ) : error ? (
+                      '—'
+                    ) : (
+                      plotProjects
+                    )}
+                  </strong> Plot Projects
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <Building size={15} color="var(--brand-gold)" />
-                <span><strong style={{ color: '#fff' }}>{aptProjects}</strong> Apartment Projects</span>
+                <span>
+                  <strong style={{ color: '#fff' }}>
+                    {isLoading ? (
+                      <span className="animate-pulse" style={{ display: 'inline-block', width: '20px', height: '14px', background: 'rgba(255,255,255,0.2)', borderRadius: '3px', verticalAlign: 'middle' }} />
+                    ) : error ? (
+                      '—'
+                    ) : (
+                      aptProjects
+                    )}
+                  </strong> Apartment Projects
+                </span>
               </div>
             </div>
 
