@@ -10,7 +10,7 @@ import { seedDatabase } from './db/seed.ts';
 import { validateEnvironment, printStartupStatus } from './utils/envValidator.ts';
 import { getSystemHealth } from './services/healthService.ts';
 import { isSupabaseConfigured } from './db/supabaseClient.ts';
-import { initAndSyncFromSupabase, waitForHydration } from './db/supabaseSync.ts';
+import { initAndSyncFromSupabase, waitForHydration, isDatabaseReady, getHydrationStats } from './db/supabaseSync.ts';
 import { publicRouter } from './routes/publicApi.ts';
 import { crmRouter } from './routes/crmApi.ts';
 import { aiRouter } from './routes/aiApi.ts';
@@ -84,8 +84,8 @@ try {
   }
 }
 
-// Dynamic Health check endpoint
-app.get(['/api/health', '/health'], async (req, res) => {
+// Dynamic Health check endpoint (Liveness)
+app.get(['/api/health', '/health', '/api/liveness', '/liveness'], async (req, res) => {
   try {
     const health = await getSystemHealth();
     res.json(health);
@@ -98,27 +98,52 @@ app.get(['/api/health', '/health'], async (req, res) => {
   }
 });
 
+// Explicit Database Readiness Probe (Readiness)
+app.get(['/api/ready', '/ready', '/api/readiness', '/readiness'], (req, res) => {
+  const stats = getHydrationStats();
+  if (stats.isReady) {
+    return res.json({
+      status: 'ready',
+      hydration: stats,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    return res.status(503).json({
+      status: 'not_ready',
+      hydration: stats,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Startup Readiness Gate: Guarantees full data hydration before serving customer API requests
 const readinessMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
     await waitForHydration();
-    next();
-  } catch (err: any) {
-    console.error('[Readiness Middleware Error]:', err.message);
-    if (config.nodeEnv === 'production' || isSupabaseConfigured()) {
+    if (!isDatabaseReady()) {
       return res.status(503).json({
         success: false,
         error: {
-          code: 'DATABASE_UNAVAILABLE',
-          message: 'Production property data is temporarily synchronizing or unavailable. Please retry in a few moments.'
+          code: 'DATABASE_NOT_READY',
+          message: 'Nova property data is temporarily synchronizing or unavailable. Please retry shortly.'
         }
       });
     }
     next();
+  } catch (err: any) {
+    console.error('[Readiness Middleware Error]:', err.message);
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: 'DATABASE_NOT_READY',
+        message: 'Nova property data is temporarily synchronizing or unavailable. Please retry shortly.'
+      }
+    });
   }
 };
 
 app.use(['/api/public', '/public', '/api/crm', '/crm', '/api/ai', '/ai'], readinessMiddleware);
+
 
 // API Routers (mounted with and without /api prefix to support all proxy/Vercel rewrites)
 app.use('/api/public', publicRouter);

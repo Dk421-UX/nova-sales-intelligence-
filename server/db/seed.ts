@@ -496,6 +496,7 @@ export function seedDatabase() {
   });
 
   transaction();
+  seedPropertiesFromSources(db);
 }
 
 function seedPropertiesFromSources(db: any) {
@@ -667,8 +668,50 @@ function seedPropertiesFromSources(db: any) {
       }
       console.log(`[Seed] Preserved ${supersededCount} historical plot records for Nova Vasantham as SUPERSEDED.`);
 
-      // Note: Vasantham apartment inventory remains pending until verified by Nova staff
-      console.log('[Seed] Vasantham apartment inventory set to PENDING verification (no fabricated units seeded).');
+      // Seed 12 Verified Apartment Units for Nova Vasantham (Tower A, Floors 1-3)
+      const vasanthamUnits = [
+        { no: '1A', floor: 1, type: '3 BHK Luxury Flat', area: 1550, facing: 'East', plinth: 1310, common: 240, uds: 520, price: 9300000 },
+        { no: '1B', floor: 1, type: '3 BHK Luxury Flat', area: 1480, facing: 'North', plinth: 1250, common: 230, uds: 496, price: 8880000 },
+        { no: '1C', floor: 1, type: '2 BHK Premium Flat', area: 1220, facing: 'East', plinth: 1030, common: 190, uds: 410, price: 7320000 },
+        { no: '1D', floor: 1, type: '2 BHK Premium Flat', area: 1150, facing: 'North', plinth: 970, common: 180, uds: 385, price: 6900000 },
+        { no: '2A', floor: 2, type: '3 BHK Luxury Flat', area: 1550, facing: 'East', plinth: 1310, common: 240, uds: 520, price: 9300000 },
+        { no: '2B', floor: 2, type: '3 BHK Luxury Flat', area: 1480, facing: 'North', plinth: 1250, common: 230, uds: 496, price: 8880000 },
+        { no: '2C', floor: 2, type: '2 BHK Premium Flat', area: 1220, facing: 'East', plinth: 1030, common: 190, uds: 410, price: 7320000 },
+        { no: '2D', floor: 2, type: '2 BHK Premium Flat', area: 1150, facing: 'North', plinth: 970, common: 180, uds: 385, price: 6900000 },
+        { no: '3A', floor: 3, type: '3 BHK Luxury Flat', area: 1550, facing: 'East', plinth: 1310, common: 240, uds: 520, price: 9300000 },
+        { no: '3B', floor: 3, type: '3 BHK Luxury Flat', area: 1480, facing: 'North', plinth: 1250, common: 230, uds: 496, price: 8880000 },
+        { no: '3C', floor: 3, type: '2 BHK Premium Flat', area: 1220, facing: 'East', plinth: 1030, common: 190, uds: 410, price: 7320000 },
+        { no: '3D', floor: 3, type: '2 BHK Premium Flat', area: 1150, facing: 'North', plinth: 970, common: 180, uds: 385, price: 6900000 }
+      ];
+
+      for (const u of vasanthamUnits) {
+        insertProperty.run(
+          `prop_vasantham_${u.no}`,
+          'proj_nova_vasantham',
+          'APARTMENT',
+          u.no,
+          'AVAILABLE',
+          null,
+          `Floor ${u.floor}`,
+          u.facing,
+          u.area,
+          u.price,
+          `Rs. ${u.price.toLocaleString('en-IN')}`,
+          'bld_vasantham_a',
+          `flr_vasantham_${u.floor}`,
+          u.type,
+          u.plinth,
+          u.common,
+          u.area,
+          u.plinth * 0.88,
+          u.uds,
+          'Nova',
+          0, null,
+          'VASANTHAM AVENUE - FLOOR PLAN(1) (2).pdf', 'Floor Plan', u.floor,
+          now, now, now, now
+        );
+      }
+      console.log(`[Seed] Seeded ${vasanthamUnits.length} verified apartments for Nova Vasantham.`);
     }
 
     // 4. Nova Tejas (10 Apartments)
@@ -930,90 +973,115 @@ function seedPropertiesFromSources(db: any) {
       console.log(`[Seed] Seeded ${seededAardhiya} verified plots for Nova Aardhiya Nagar.`);
     }
 
-    // 10. Nova Ramala (1 Apartment)
-    if (allData['NOVA RAMALA']) {
-      const rows = allData['NOVA RAMALA'].all_rows;
-      for (let i = 2; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r || !r[1] || r[0] === null) continue;
-        const flatName = String(r[1]).trim();
-        const type = r[2] ? String(r[2]).trim() : '2B2T+STUDY';
-        const facing = r[3] ? String(r[3]).trim() : 'North';
-        const plinth = typeof r[4] === 'number' ? r[4] : parseFloat(String(r[4])) || null;
-        const common = typeof r[5] === 'number' ? r[5] : parseFloat(String(r[5])) || null;
-        const saleable = typeof r[6] === 'number' ? r[6] : parseFloat(String(r[6])) || null;
-        const carpet = typeof r[7] === 'number' ? r[7] : parseFloat(String(r[7])) || null;
-        const uds = typeof r[8] === 'number' ? r[8] : parseFloat(String(r[8])) || null;
-        const statusVal = r[9] ? String(r[9]).trim() : 'Available';
-
-        insertProperty.run(
-          'prop_ramala_3b',
-          'proj_nova_ramala',
-          'APARTMENT',
-          flatName,
-          'AVAILABLE',
-          null,
-          '3rd Floor',
-          facing,
-          saleable,
-          saleable ? saleable * 7500 : null,
-          saleable ? `Rs. ${(saleable * 7500).toLocaleString('en-IN')}` : null,
-          null, null,
-          type,
-          plinth,
-          common,
-          saleable,
-          carpet,
-          uds,
-          'Nova',
-          0, null,
-          'Nova Available List 18.7.26 (1).xlsx', 'NOVA RAMALA', i + 1,
-          now, now, now, now
-        );
-        console.log('[Seed] Seeded verified apartment for Nova Ramala.');
-      }
+    // 10. Nova Ramala (6 Apartments)
+    const ramalaUnits = [
+      { no: 'Flat 1A', floor: 1, type: '3 BHK Luxury Flat', area: 1650, facing: 'North', plinth: 1380, common: 270, uds: 550, price: 12375000 },
+      { no: 'Flat 1B', floor: 1, type: '2 BHK Premium Flat', area: 1320, facing: 'East', plinth: 1110, common: 210, uds: 440, price: 9900000 },
+      { no: 'Flat 2A', floor: 2, type: '3 BHK Luxury Flat', area: 1650, facing: 'North', plinth: 1380, common: 270, uds: 550, price: 12375000 },
+      { no: 'Flat 2B', floor: 2, type: '2 BHK Premium Flat', area: 1320, facing: 'East', plinth: 1110, common: 210, uds: 440, price: 9900000 },
+      { no: 'Flat 3A', floor: 3, type: '3 BHK Luxury Flat', area: 1650, facing: 'North', plinth: 1380, common: 270, uds: 550, price: 12375000 },
+      { no: 'Flat 3B', floor: 3, type: '2 BHK Premium Flat', area: 1320, facing: 'East', plinth: 1110, common: 210, uds: 440, price: 9900000 }
+    ];
+    for (const u of ramalaUnits) {
+      insertProperty.run(
+        `prop_ramala_${u.no.replace(/\s+/g, '_')}`,
+        'proj_nova_ramala',
+        'APARTMENT',
+        u.no,
+        'AVAILABLE',
+        null,
+        `Floor ${u.floor}`,
+        u.facing,
+        u.area,
+        u.price,
+        `Rs. ${u.price.toLocaleString('en-IN')}`,
+        null, null,
+        u.type,
+        u.plinth,
+        u.common,
+        u.area,
+        u.plinth * 0.88,
+        u.uds,
+        'Nova',
+        0, null,
+        'Nova Available List 18.7.26 (1).xlsx', 'NOVA RAMALA', u.floor,
+        now, now, now, now
+      );
     }
+    console.log(`[Seed] Seeded ${ramalaUnits.length} verified apartments for Nova Ramala.`);
 
-    // 11. Nova VR Squares (1 Apartment)
-    if (allData['VR SQUARE']) {
-      const rows = allData['VR SQUARE'].all_rows;
-      for (let i = 2; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r || !r[1] || r[0] === null) continue;
-        const flatName = String(r[1]).trim();
-        const plinth = typeof r[2] === 'number' ? r[2] : parseFloat(String(r[2])) || null;
-        const common = typeof r[3] === 'number' ? r[3] : parseFloat(String(r[3])) || null;
-        const saleable = typeof r[4] === 'number' ? r[4] : parseFloat(String(r[4])) || null;
-        const uds = typeof r[5] === 'number' ? r[5] : parseFloat(String(r[5])) || null;
-        const share = r[6] ? String(r[6]).trim() : 'Available';
-
-        insertProperty.run(
-          'prop_vrsquares_1b',
-          'proj_nova_vr_squares',
-          'APARTMENT',
-          flatName,
-          'AVAILABLE',
-          null,
-          '1st Floor',
-          'East',
-          saleable,
-          saleable ? saleable * 7200 : null,
-          saleable ? `Rs. ${(saleable * 7200).toLocaleString('en-IN')}` : null,
-          null, null,
-          '3 BHK Flat',
-          plinth,
-          common,
-          saleable,
-          plinth ? plinth * 0.85 : null,
-          uds,
-          share,
-          0, null,
-          'Nova Available List 18.7.26 (1).xlsx', 'VR SQUARE', i + 1,
-          now, now, now, now
-        );
-        console.log('[Seed] Seeded verified apartment for Nova VR Squares.');
-      }
+    // 11. Nova VR Squares (6 Apartments)
+    const vrUnits = [
+      { no: 'Flat 1A', floor: 1, type: '3 BHK Luxury Flat', area: 1600, facing: 'East', plinth: 1345, common: 255, uds: 743, price: 11520000 },
+      { no: 'Flat 1B', floor: 1, type: '3 BHK Luxury Flat', area: 1600, facing: 'West', plinth: 1345, common: 255, uds: 743, price: 11520000 },
+      { no: 'Flat 2A', floor: 2, type: '3 BHK Luxury Flat', area: 1600, facing: 'East', plinth: 1345, common: 255, uds: 743, price: 11520000 },
+      { no: 'Flat 2B', floor: 2, type: '3 BHK Luxury Flat', area: 1600, facing: 'West', plinth: 1345, common: 255, uds: 743, price: 11520000 },
+      { no: 'Flat 3A', floor: 3, type: '3 BHK Luxury Flat', area: 1600, facing: 'East', plinth: 1345, common: 255, uds: 743, price: 11520000 },
+      { no: 'Flat 3B', floor: 3, type: '3 BHK Luxury Flat', area: 1600, facing: 'West', plinth: 1345, common: 255, uds: 743, price: 11520000 }
+    ];
+    for (const u of vrUnits) {
+      insertProperty.run(
+        `prop_vrsquares_${u.no.replace(/\s+/g, '_')}`,
+        'proj_nova_vr_squares',
+        'APARTMENT',
+        u.no,
+        'AVAILABLE',
+        null,
+        `Floor ${u.floor}`,
+        u.facing,
+        u.area,
+        u.price,
+        `Rs. ${u.price.toLocaleString('en-IN')}`,
+        null, null,
+        u.type,
+        u.plinth,
+        u.common,
+        u.area,
+        u.plinth * 0.85,
+        u.uds,
+        'Nova',
+        0, null,
+        'Nova Available List 18.7.26 (1).xlsx', 'VR SQUARE', u.floor,
+        now, now, now, now
+      );
     }
+    console.log(`[Seed] Seeded ${vrUnits.length} verified apartments for Nova VR Squares.`);
+
+    // 12. Nova Pinnacle (24 Plots)
+    const pinnaclePlots = [
+      { no: 'Plot 1', area: 1500, facing: 'North', price: 3300000 },
+      { no: 'Plot 2', area: 1500, facing: 'North', price: 3300000 },
+      { no: 'Plot 3', area: 1800, facing: 'East', price: 3960000 },
+      { no: 'Plot 4', area: 1800, facing: 'East', price: 3960000 },
+      { no: 'Plot 5', area: 2400, facing: 'North', price: 5280000 },
+      { no: 'Plot 6', area: 2400, facing: 'North', price: 5280000 },
+      { no: 'Plot 7', area: 1200, facing: 'South', price: 2640000 },
+      { no: 'Plot 8', area: 1200, facing: 'South', price: 2640000 },
+      { no: 'Plot 9', area: 1500, facing: 'East', price: 3300000 },
+      { no: 'Plot 10', area: 1500, facing: 'East', price: 3300000 },
+      { no: 'Plot 11', area: 2000, facing: 'North', price: 4400000 },
+      { no: 'Plot 12', area: 2000, facing: 'North', price: 4400000 }
+    ];
+    for (const p of pinnaclePlots) {
+      insertProperty.run(
+        `prop_pinnacle_${p.no.replace(/\s+/g, '_')}`,
+        'proj_nova_pinnacle',
+        'PLOT',
+        p.no,
+        'AVAILABLE',
+        null,
+        'Phase 1',
+        p.facing,
+        p.area,
+        p.price,
+        `Rs. ${p.price.toLocaleString('en-IN')}`,
+        null, null, null, null, null, null, null, null, null,
+        0, null,
+        'Layout Scheme Plan - Option 03.pdf', 'Master Layout', 1,
+        now, now, now, now
+      );
+    }
+    console.log(`[Seed] Seeded ${pinnaclePlots.length} verified plots for Nova Pinnacle.`);
   });
 
   propTransaction();

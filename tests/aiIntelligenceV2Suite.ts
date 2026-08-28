@@ -20,7 +20,13 @@ async function runAiIntelligenceV2Suite() {
   const db = getDb();
 
   // Create test properties
-  createProperty({
+  function safeCreate(p: any) {
+    try {
+      createProperty(p, 'usr_admin', 'ADMIN');
+    } catch (_) {}
+  }
+
+  safeCreate({
     project_id: 'proj_nova_edens',
     property_number: 'Plot 12',
     property_type: 'PLOT',
@@ -28,9 +34,10 @@ async function runAiIntelligenceV2Suite() {
     facing: 'North',
     area_sqft: 2000,
     price: 3800000
-  }, 'usr_admin', 'ADMIN');
+  });
+  db.prepare("UPDATE properties SET status = 'AVAILABLE', facing = 'North', area_sqft = 2000, price = 3800000 WHERE property_number = 'Plot 12' AND project_id = 'proj_nova_edens'").run();
 
-  createProperty({
+  safeCreate({
     project_id: 'proj_nova_tejas',
     property_number: 'Flat - 1A',
     property_type: 'APARTMENT',
@@ -42,9 +49,9 @@ async function runAiIntelligenceV2Suite() {
     uds_sqft: 610,
     saleable_area_sqft: 1728,
     carpet_area_sqft: 1468
-  }, 'usr_admin', 'ADMIN');
+  });
 
-  createProperty({
+  safeCreate({
     project_id: 'proj_nova_vasantham',
     property_number: 'Flat 1A',
     property_type: 'APARTMENT',
@@ -56,7 +63,7 @@ async function runAiIntelligenceV2Suite() {
     uds_sqft: 520,
     saleable_area_sqft: 1550,
     carpet_area_sqft: 1310
-  }, 'usr_admin', 'ADMIN');
+  });
 
   let passed = 0;
   let failed = 0;

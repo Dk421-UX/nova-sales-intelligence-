@@ -743,3 +743,104 @@ export function deleteLayout(layoutId: string, userId: string, userRole: string)
   return { success: true, message: `Layout '${layout.name}' successfully deleted.` };
 }
 
+/**
+ * PROJECT-SCOPED INVENTORY CLEAR / REPLACEMENT (Requirement Phase 10 & 11)
+ * Safely removes all inventory properties, property geometry, draft changes, and imports
+ * strictly for the specified project. Preserves the project itself, its media, and all other projects.
+ * Requires exact confirmation e.g. "CLEAR NOVA VASANTHAM INVENTORY".
+ */
+export async function clearProjectInventory(
+  projectId: string,
+  userId: string,
+  userRole: string,
+  confirmation: string
+): Promise<{ success: boolean; message: string; projectId: string; deletedCount: number }> {
+  const db = getDb();
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) {
+    throw new Error(`Project with ID '${projectId}' not found.`);
+  }
+
+  const expectedExact1 = `CLEAR ${project.name.toUpperCase().trim()} INVENTORY`;
+  const expectedExact2 = `CLEAR ${project.name.toUpperCase().trim()}`;
+  const expectedExact3 = `CLEAR ${project.slug.toUpperCase().replace(/-/g, ' ').trim()} INVENTORY`;
+  const cleanedConfirm = (confirmation || '').toUpperCase().trim();
+
+  if (cleanedConfirm !== expectedExact1 && cleanedConfirm !== expectedExact2 && cleanedConfirm !== expectedExact3) {
+    throw new Error(`Confirmation mismatch: Please type exactly "${expectedExact1}".`);
+  }
+
+  let deletedCount = 0;
+  const transaction = db.transaction(() => {
+    // 1. Delete property_geometry belonging to this project's properties
+    db.prepare(`
+      DELETE FROM property_geometry 
+      WHERE property_id IN (SELECT id FROM properties WHERE project_id = ?)
+    `).run(projectId);
+
+    // 2. Delete draft_changes for this project
+    db.prepare(`DELETE FROM draft_changes WHERE project_id = ?`).run(projectId);
+
+    // 3. Delete import_rows for imports belonging to this project
+    db.prepare(`
+      DELETE FROM import_rows 
+      WHERE import_id IN (SELECT id FROM imports WHERE detected_project_id = ?)
+    `).run(projectId);
+
+    // 4. Delete imports for this project
+    db.prepare(`DELETE FROM imports WHERE detected_project_id = ?`).run(projectId);
+
+    // 5. Count and delete properties for this project
+    const propCountRow = db.prepare(`SELECT COUNT(*) as c FROM properties WHERE project_id = ?`).get(projectId) as any;
+    deletedCount = propCountRow?.c || 0;
+    db.prepare(`DELETE FROM properties WHERE project_id = ?`).run(projectId);
+
+    // 6. Record immutable audit log
+    recordAuditLog({
+      entity_type: 'PROJECT',
+      entity_id: projectId,
+      project_id: projectId,
+      action: 'CLEAR_PROJECT_INVENTORY',
+      old_values: { projectName: project.name, clearedPropertyCount: deletedCount },
+      performed_by: userId,
+      user_role: userRole
+    });
+  });
+
+  transaction();
+
+  // Synchronize deletions to Supabase PostgreSQL in dependency order
+  if (process.env.NODE_ENV !== 'test') {
+    const { getSupabaseAdmin, isSupabaseConfigured } = await import('../db/supabaseClient.ts');
+    const supabase = getSupabaseAdmin();
+    if (supabase && isSupabaseConfigured()) {
+      try {
+        const { data: props } = await supabase.from('properties').select('id').eq('project_id', projectId);
+        if (props && props.length > 0) {
+          const propIds = props.map(p => p.id);
+          await supabase.from('property_geometry').delete().in('property_id', propIds);
+        }
+        await supabase.from('draft_changes').delete().eq('project_id', projectId);
+        
+        const { data: imps } = await supabase.from('imports').select('id').eq('detected_project_id', projectId);
+        if (imps && imps.length > 0) {
+          const impIds = imps.map(i => i.id);
+          await supabase.from('import_rows').delete().in('import_id', impIds);
+        }
+        await supabase.from('imports').delete().eq('detected_project_id', projectId);
+        await supabase.from('properties').delete().eq('project_id', projectId);
+      } catch (err: any) {
+        console.error(`[SupabaseSync] Notice during project clear on Supabase:`, err.message);
+      }
+    }
+  }
+
+  return {
+    success: true,
+    message: `Successfully cleared ${deletedCount} inventory records for '${project.name}'. Project and layout assets remain intact.`,
+    projectId,
+    deletedCount
+  };
+}
+
+

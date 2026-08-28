@@ -20,8 +20,14 @@ async function runAiEvaluationSuite() {
   seedDatabase();
   const db = getDb();
 
-  // Create test plots using canonical property service
-  const prop1 = createProperty({
+  // Create test plots using canonical property service safely
+  function safeCreate(p: any) {
+    try {
+      createProperty(p, 'usr_admin', 'ADMIN');
+    } catch (_) {}
+  }
+
+  safeCreate({
     project_id: 'proj_nova_diya_gardens',
     property_number: 'Plot 1',
     property_type: 'PLOT',
@@ -29,9 +35,10 @@ async function runAiEvaluationSuite() {
     facing: 'East',
     area_sqft: 1500,
     price: 4500000
-  }, 'usr_admin', 'ADMIN');
+  });
+  db.prepare("UPDATE properties SET status = 'AVAILABLE', facing = 'East', area_sqft = 1500, price = 4500000 WHERE property_number = 'Plot 1' AND project_id = 'proj_nova_diya_gardens'").run();
 
-  const prop8 = createProperty({
+  safeCreate({
     project_id: 'proj_nova_diya_gardens',
     property_number: 'Plot 8',
     property_type: 'PLOT',
@@ -39,7 +46,8 @@ async function runAiEvaluationSuite() {
     facing: 'North',
     area_sqft: 1800,
     price: 5400000
-  }, 'usr_admin', 'ADMIN');
+  });
+  db.prepare("UPDATE properties SET status = 'AVAILABLE', facing = 'North', area_sqft = 1800, price = 5400000 WHERE property_number = 'Plot 8' AND project_id = 'proj_nova_diya_gardens'").run();
 
   let passed = 0;
   let failed = 0;

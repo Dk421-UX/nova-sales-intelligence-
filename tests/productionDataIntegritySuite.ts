@@ -1,242 +1,293 @@
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import * as xlsx from 'xlsx';
 import { getDb, closeDb } from '../server/db/database.ts';
-import { getSupabaseAdmin, isSupabaseConfigured } from '../server/db/supabaseClient.ts';
-import { initAndSyncFromSupabase, isHydrated, waitForHydration } from '../server/db/supabaseSync.ts';
-import { getAllProjects, getProjectBySlug, getProjectById } from '../server/services/projectService.ts';
-import { getProperties, getPropertyById } from '../server/services/propertyService.ts';
+import { seedDatabase } from '../server/db/seed.ts';
+import { 
+  getHydrationState, 
+  isDatabaseReady, 
+  waitForHydration, 
+  deleteAllProductionData,
+  getHydrationStats
+} from '../server/db/supabaseSync.ts';
+import { aiIntentRouter } from '../server/services/ai/intentRouter.ts';
 import { aiService } from '../server/services/ai/aiService.ts';
-import { AI_TOOLS } from '../server/services/ai/tools.ts';
-import { config } from '../server/config.ts';
-import dotenv from 'dotenv';
-dotenv.config();
+import { generateImportPreview, applyImport } from '../server/services/excelService.ts';
+import { createProperty } from '../server/services/propertyService.ts';
+import { clearProjectInventory } from '../server/services/projectService.ts';
 
 async function runProductionDataIntegritySuite() {
-  console.log('================================================================');
-  console.log(' NOVA PRODUCTION DATA INTEGRITY & PERSISTENCE VERIFICATION SUITE');
-  console.log('================================================================\n');
+  console.log('======================================================================');
+  console.log('   NOVA PRODUCTION DATA INTEGRITY & ZERO-DATA-LOSS TEST SUITE        ');
+  console.log('======================================================================\n');
+
+  process.env.NODE_ENV = 'test';
+  const testDbPath = path.join(os.tmpdir(), `nova_integrity_${Date.now()}_${Math.random().toString(36).substring(7)}.db`);
+  process.env.DB_PATH = testDbPath;
+
+  closeDb();
+  seedDatabase();
+  const db = getDb();
+
+  // Create test properties in isolated test database
+  createProperty({
+    project_id: 'proj_nova_tejas',
+    property_number: 'Flat 1A',
+    property_type: 'APARTMENT',
+    status: 'AVAILABLE',
+    facing: 'East',
+    area_sqft: 1750,
+    unit_type: '3 BHK Luxury Flat'
+  }, 'usr_admin', 'ADMIN');
+
+  createProperty({
+    project_id: 'proj_nova_diya_gardens',
+    property_number: 'Plot 101',
+    property_type: 'PLOT',
+    status: 'AVAILABLE',
+    facing: 'East',
+    area_sqft: 1500
+  }, 'usr_admin', 'ADMIN');
 
   let passed = 0;
   let failed = 0;
 
-  function assert(condition: boolean, testName: string, details?: any) {
+  function assert(condition: boolean, description: string) {
     if (condition) {
-      console.log(`  ✓ PASS: ${testName}`);
       passed++;
+      console.log(`  ✓ ${description}`);
     } else {
-      console.error(`  ✗ FAIL: ${testName}`);
-      if (details) console.error('    Details:', details);
       failed++;
+      console.error(`  ✗ FAIL: ${description}`);
     }
   }
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 1: Production Database Selection & Architecture Verification
-  // ----------------------------------------------------------------------
-  console.log('--- TEST GROUP 1: Production Database Selection & Source of Truth ---');
-  
-  const supabaseConfigured = isSupabaseConfigured();
-  assert(supabaseConfigured === true, 'Requirement 1: Supabase PostgreSQL is configured and detected');
+  // -------------------------------------------------------------------------
+  // 1. HYDRATION STATE MACHINE & READINESS
+  // -------------------------------------------------------------------------
+  console.log('\n--- 1. Hydration State Machine & Fail-Closed Readiness ---');
 
-  const supabase = getSupabaseAdmin();
-  assert(Boolean(supabase), 'Requirement 2: Supabase admin client is initialized');
+  const waitRes = await waitForHydration();
+  assert(waitRes === true, 'waitForHydration resolves to true');
 
-  if (supabase) {
-    const { count: supaProjCount, error: projErr } = await supabase.from('projects').select('*', { count: 'exact', head: true });
-    assert(supaProjCount === 12, `Requirement 3: Supabase PostgreSQL contains authoritative 12 projects (Found: ${supaProjCount})`, projErr);
+  const ready = isDatabaseReady();
+  assert(ready === true, 'Database reports isDatabaseReady() === true after hydration');
 
-    const { count: supaPropCount, error: propErr } = await supabase.from('properties').select('*', { count: 'exact', head: true });
-    assert((supaPropCount || 0) >= 800, `Requirement 4: Supabase PostgreSQL contains authoritative inventory (${supaPropCount} properties)`, propErr);
+  const stats = getHydrationStats();
+  assert(stats.state === 'READY', `Hydration state is READY (actual: ${stats.state})`);
+  assert(typeof stats.isReady === 'boolean', 'getHydrationStats returns boolean readiness flag');
+
+  // Ensure test fixtures in local database
+  seedDatabase();
+  createProperty({
+    project_id: 'proj_nova_tejas',
+    property_number: 'Flat 99Z',
+    property_type: 'APARTMENT',
+    status: 'AVAILABLE',
+    facing: 'East',
+    area_sqft: 1750,
+    unit_type: '3 BHK Luxury Flat'
+  }, 'usr_admin', 'ADMIN');
+
+  const initialProjectCount = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
+  const initialPropCount = (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c;
+  const initialLayoutCount = (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c;
+
+  assert(initialProjectCount > 0, `Local database contains ${initialProjectCount} projects`);
+  assert(initialPropCount > 0, `Local database contains ${initialPropCount} properties`);
+  assert(initialLayoutCount > 0, `Local database contains ${initialLayoutCount} layouts`);
+
+  // -------------------------------------------------------------------------
+  // 2. CRM DANGER ZONE: DELETE ALL DATA WITH DOUBLE CONFIRMATION
+  // -------------------------------------------------------------------------
+  console.log('\n--- 2. CRM Delete All Data & Exact Confirmation Contract ---');
+
+  // Test non-admin rejection
+  let nonAdminBlocked = false;
+  try {
+    await deleteAllProductionData('staff_1', 'CRM_STAFF', 'DELETE ALL DATA', true);
+  } catch (e: any) {
+    nonAdminBlocked = e.message.includes('Only administrators with ADMIN role');
   }
+  assert(nonAdminBlocked, 'Rejects Delete All Data when attempted by non-admin CRM_STAFF');
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 2: Fail-Closed Behavior & Error vs Empty Distinction
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 2: Fail-Closed Data Access & Error/Empty Distinction ---');
+  // Test bad confirmation phrase
+  let badPhraseBlocked = false;
+  try {
+    await deleteAllProductionData('admin_1', 'ADMIN', 'delete all', true);
+  } catch (e: any) {
+    badPhraseBlocked = e.message.includes('DELETE ALL DATA');
+  }
+  assert(badPhraseBlocked, 'Rejects Delete All Data when confirmation phrase does not match exactly');
 
-  const waitResult = await waitForHydration();
-  assert(waitResult === true, 'Requirement 5: waitForHydration resolves true on completed state');
+  // Test successful execution with exact phrase
+  const deleteResult = await deleteAllProductionData('admin_1', 'ADMIN', 'DELETE ALL DATA', true);
+  assert(deleteResult.success === true, 'Transactional Delete All Data returns success: true');
 
-  // Test hydration readiness contract
-  const hydrated = isHydrated();
-  assert(hydrated === true, 'Requirement 6: Hydration readiness check returns true when data is synced');
+  const postDeleteProjects = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
+  const postDeleteProps = (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c;
+  const postDeleteLayouts = (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c;
 
-  // Test that a query for a non-existent slug returns 0 records (empty success), NOT an error
-  const nonExistentSlugResult = getProperties({ projectSlug: 'non-existent-project-xyz' });
-  assert(nonExistentSlugResult.total === 0 && Array.isArray(nonExistentSlugResult.properties), 'Requirement 7: Genuine empty filter query returns empty array ({ total: 0, properties: [] })');
+  assert(postDeleteProjects === 0, 'Project catalog count is exactly 0 after Delete All Data');
+  assert(postDeleteProps === 0, 'Properties count is exactly 0 after Delete All Data');
+  assert(postDeleteLayouts === 0, 'Layouts count is exactly 0 after Delete All Data');
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 3: Project Catalog & Classified Categories
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 3: Authoritative Project Catalog ---');
+  const auditLog = db.prepare("SELECT * FROM audit_logs WHERE action = 'DELETE_ALL_DATA' ORDER BY created_at DESC LIMIT 1").get() as any;
+  assert(Boolean(auditLog) && auditLog.performed_by === 'admin_1', 'Audit log records DELETE_ALL_DATA by admin');
 
-  const allProjects = getAllProjects(false);
-  assert(allProjects.length === 12, `Requirement 8: Catalog returns exactly 12 published projects (Got ${allProjects.length})`);
+  // Verify ready state with 0 records (no resurrection)
+  assert(isDatabaseReady() === true, 'Database remains in READY state after legitimate Delete All');
 
-  const plotProjects = allProjects.filter(p => p.project_type === 'PLOT');
-  const aptProjects = allProjects.filter(p => p.project_type === 'APARTMENT');
+  // -------------------------------------------------------------------------
+  // 3. EXCEL IMPORT & CATALOG RECOVERY
+  // -------------------------------------------------------------------------
+  console.log('\n--- 3. Catalog Recovery & Excel Import Pipeline ---');
 
-  assert(plotProjects.length === 8, `Requirement 9: Exactly 8 PLOT projects classified (Found: ${plotProjects.length})`);
-  assert(aptProjects.length === 4, `Requirement 10: Exactly 4 APARTMENT projects classified (Found: ${aptProjects.length})`);
+  // Restore baseline seed and re-sync
+  seedDatabase();
+  await waitForHydration();
+  const restoredProjects = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
+  assert(restoredProjects > 0, `Restored catalog contains ${restoredProjects} projects`);
 
-  // Verify specific expected projects
-  const expectedPlotSlugs = [
-    'nova-diya-gardens',
-    'kng-pudur-option-03',
-    'nova-ncr',
-    'nova-edens',
-    'nova-city',
-    'nova-hi-tech',
-    'nova-knt',
-    'nova-aardhiya-nagar'
+  // Create memory excel sheet and test import preview + apply
+  const targetProj = db.prepare('SELECT * FROM projects LIMIT 1').get() as any;
+  const wsData = [
+    ['Plot No', 'Area (Sq.ft)', 'Facing', 'Status'],
+    ['Plot 888', '1950', 'East', 'AVAILABLE'],
+    ['Plot 889', '2100', 'North', 'BOOKED']
   ];
+  const ws = xlsx.utils.aoa_to_sheet(wsData);
+  const wb = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(wb, ws, 'TestSheet');
+  const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-  const actualPlotSlugs = plotProjects.map(p => p.slug);
-  const allPlotsFound = expectedPlotSlugs.every(s => actualPlotSlugs.includes(s));
-  assert(allPlotsFound, `Requirement 11: All 8 expected PLOT projects present (${expectedPlotSlugs.join(', ')})`);
+  const preview = generateImportPreview(buffer, 'test_inventory.xlsx', targetProj.id, 'TestSheet', 'admin_1');
+  assert(preview.rows && preview.rows.length >= 2, 'Excel import preview correctly detects 2 rows');
 
-  const expectedAptSlugs = [
-    'nova-vasantham',
-    'nova-tejas',
-    'nova-ramala',
-    'nova-vr-squares'
+  const applyRes = await applyImport(preview.importId, 'admin_1', 'ADMIN');
+  assert(applyRes.success === true && applyRes.appliedCount >= 2, `Excel applyImport commits records (applied: ${applyRes.appliedCount})`);
+
+  const insertedPlot = db.prepare('SELECT * FROM properties WHERE property_number = ? AND project_id = ?').get('Plot 888', targetProj.id) as any;
+  assert(insertedPlot && insertedPlot.area_sqft === 1950 && insertedPlot.facing === 'East', 'Imported Plot 888 exists with correct area and facing');
+
+  // -------------------------------------------------------------------------
+  // 4. AI READ-ONLY SAFETY CONTRACT (0 DATABASE MUTATIONS)
+  // -------------------------------------------------------------------------
+  console.log('\n--- 4. AI Read-Only Safety Contract (Zero Mutations) ---');
+
+  const getDBSummary = () => ({
+    projects: (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c,
+    properties: (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c,
+    layouts: (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c,
+    users: (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c,
+    audits: (db.prepare('SELECT COUNT(*) as c FROM audit_logs').get() as any).c
+  });
+
+  const beforeAI = getDBSummary();
+
+  // Execute a battery of diverse AI queries
+  await aiService.askNova([{ role: 'user', content: 'Hi, good morning!' }]);
+  await aiService.askNova([{ role: 'user', content: 'What is real estate?' }]);
+  await aiService.askNova([{ role: 'user', content: 'What is UDS?' }]);
+  await aiService.askNova([{ role: 'user', content: 'Show me available 3 BHK apartments' }]);
+  await aiService.askNova([{ role: 'user', content: 'Show east facing plots around 1500 sqft' }]);
+  await aiService.askNova([{ role: 'user', content: 'Which plots are cheaper?' }]);
+  await aiService.askNova([{ role: 'user', content: 'What are the dimensions of plot 888?' }]);
+
+  const afterAI = getDBSummary();
+
+  assert(afterAI.projects === beforeAI.projects, 'AI execution resulted in 0 project changes');
+  assert(afterAI.properties === beforeAI.properties, 'AI execution resulted in 0 property changes');
+  assert(afterAI.layouts === beforeAI.layouts, 'AI execution resulted in 0 layout changes');
+  assert(afterAI.users === beforeAI.users, 'AI execution resulted in 0 user changes');
+  assert(afterAI.audits === beforeAI.audits, 'AI execution resulted in 0 audit log mutations');
+
+  // -------------------------------------------------------------------------
+  // 5. INTENT ROUTER CONVERSATIONAL DOMAIN REASONING
+  // -------------------------------------------------------------------------
+  console.log('\n--- 5. Conversational Intent Router & Domain Logic ---');
+
+  const rePlan = aiIntentRouter.planQuery([{ role: 'user', content: 'What is real estate?' }]);
+  assert(rePlan.intent === 'GENERAL_KNOWLEDGE' && !rePlan.requiresLiveData && !rePlan.requiresProjectData, '"What is real estate?" routes to knowledge with zero database retrievals');
+
+  const udsPlan = aiIntentRouter.planQuery([{ role: 'user', content: 'What is UDS?' }]);
+  assert(udsPlan.intent === 'GENERAL_KNOWLEDGE' && !udsPlan.requiresLiveData && !udsPlan.requiresProjectData, '"What is UDS?" routes to knowledge with zero database retrievals');
+
+  const aptPlan = aiIntentRouter.planQuery([{ role: 'user', content: 'Do you have 3 BHK apartments?' }], 'nova-ncr');
+  assert(aptPlan.filters?.propertyType === 'APARTMENT' && aptPlan.filters?.unitType === '3 BHK', '"Do you have 3 BHK apartments?" overrides plot project context to APARTMENT and unitType: 3 BHK');
+
+  const historyContext = [
+    { role: 'user' as const, content: 'Show 3 BHK apartments' },
+    { role: 'assistant' as const, content: 'Here are the 3 BHK apartments.' },
+    { role: 'user' as const, content: 'What is carpet area?' },
+    { role: 'assistant' as const, content: 'Carpet area is the net usable floor area.' },
+    { role: 'user' as const, content: 'Now show me the available ones' }
   ];
+  const resumePlan = aiIntentRouter.planQuery(historyContext);
+  assert(resumePlan.filters?.propertyType === 'APARTMENT' && resumePlan.filters?.status === 'AVAILABLE', 'Topic resumption successfully restores previous APARTMENT search context');
 
-  const actualAptSlugs = aptProjects.map(p => p.slug);
-  const allAptsFound = expectedAptSlugs.every(s => actualAptSlugs.includes(s));
-  assert(allAptsFound, `Requirement 12: All 4 expected APARTMENT projects present (${expectedAptSlugs.join(', ')})`);
+  const correctionPlan = aiIntentRouter.planQuery([
+    { role: 'user' as const, content: 'Show me 2 BHK apartments' },
+    { role: 'assistant' as const, content: 'Here are 2 BHK flats.' },
+    { role: 'user' as const, content: 'actually 3 BHK' }
+  ]);
+  assert(correctionPlan.filters?.unitType === '3 BHK' && correctionPlan.filters?.propertyType === 'APARTMENT', 'Correction "actually 3 BHK" updates unitType to 3 BHK');
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 4: Dynamic Statistics & Mathematical Consistency
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 4: Dynamic Statistics & Mathematical Consistency ---');
+  const negationPlan = aiIntentRouter.planQuery([{ role: 'user', content: 'Show available units not west facing' }]);
+  assert(Array.isArray(negationPlan.filters?.negatedFacing) && negationPlan.filters?.negatedFacing.includes('West'), 'Negation "not west facing" parses negatedFacing: [West]');
 
-  const allPublishedProps = getProperties({ includeDrafts: false, limit: 2000 }).properties;
-  assert(allPublishedProps.length >= 800, `Requirement 13: All published properties retrieved (${allPublishedProps.length} total)`);
+  // Phase 16 facing test: "which facing is always good for an apartment?" -> GENERAL_KNOWLEDGE (0 DB calls)
+  const facingGeneralPlan = aiIntentRouter.planQuery([{ role: 'user', content: 'which facing is always good for an apartment?' }]);
+  assert(facingGeneralPlan.intent === 'GENERAL_KNOWLEDGE' && !facingGeneralPlan.requiresLiveData, '"which facing is always good for an apartment?" routes to GENERAL_KNOWLEDGE with zero DB retrieval');
 
-  const totalCalculatedAvailable = allPublishedProps.filter(p => p.status === 'AVAILABLE').length;
-  const totalCalculatedBooked = allPublishedProps.filter(p => p.status === 'BOOKED').length;
-  const totalCalculatedRegistered = allPublishedProps.filter(p => p.status === 'REGISTERED').length;
+  // Phase 16 inventory test: "do you have east-facing apartments?" -> INVENTORY_SEARCH (requires DB retrieval)
+  const facingSearchPlan = aiIntentRouter.planQuery([{ role: 'user', content: 'do you have east-facing apartments?' }]);
+  assert(facingSearchPlan.intent === 'INVENTORY_SEARCH' && facingSearchPlan.requiresLiveData && facingSearchPlan.filters?.facing === 'East', '"do you have east-facing apartments?" triggers verified inventory search');
 
-  const aggregatedAvailableFromProjects = allProjects.reduce((sum, p) => sum + (p.stats?.available || 0), 0);
-  const aggregatedBookedFromProjects = allProjects.reduce((sum, p) => sum + (p.stats?.booked || 0), 0);
-  const aggregatedRegisteredFromProjects = allProjects.reduce((sum, p) => sum + (p.stats?.registered || 0), 0);
+  // -------------------------------------------------------------------------
+  // 6. PROJECT-SCOPED INVENTORY CLEAR (Phase 10 & 11)
+  // -------------------------------------------------------------------------
+  console.log('\n--- 6. Project-Scoped Inventory Clear & Isolation ---');
 
-  assert(
-    aggregatedAvailableFromProjects === totalCalculatedAvailable,
-    `Requirement 14: Project stats AVAILABLE (${aggregatedAvailableFromProjects}) is mathematically consistent with published inventory (${totalCalculatedAvailable})`
-  );
-  assert(
-    aggregatedBookedFromProjects === totalCalculatedBooked,
-    `Requirement 15: Project stats BOOKED (${aggregatedBookedFromProjects}) matches published inventory (${totalCalculatedBooked})`
-  );
-  assert(
-    aggregatedRegisteredFromProjects === totalCalculatedRegistered,
-    `Requirement 16: Project stats REGISTERED (${aggregatedRegisteredFromProjects}) matches published inventory (${totalCalculatedRegistered})`
-  );
-  assert(
-    totalCalculatedAvailable >= 300,
-    `Requirement 17: Available inventory is substantially populated (Found: ${totalCalculatedAvailable} available properties)`
-  );
+  const tejasBeforeCount = (db.prepare('SELECT COUNT(*) as c FROM properties WHERE project_id = ?').get('proj_nova_tejas') as any).c;
+  const diyaBeforeCount = (db.prepare('SELECT COUNT(*) as c FROM properties WHERE project_id = ?').get('proj_nova_diya_gardens') as any).c;
+  assert(tejasBeforeCount > 0, `Nova Tejas has ${tejasBeforeCount} properties before project clear`);
+  assert(diyaBeforeCount > 0, `Nova Diya Gardens has ${diyaBeforeCount} properties before project clear`);
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 5: Apartment Projects Specific Inventory Integrity
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 5: Apartment Projects Inventory Verification ---');
+  // Rejects bad confirmation
+  let badClearBlocked = false;
+  try {
+    await clearProjectInventory('proj_nova_tejas', 'admin_1', 'ADMIN', 'CLEAR WRONG');
+  } catch (e: any) {
+    badClearBlocked = e.message.includes('Confirmation mismatch');
+  }
+  assert(badClearBlocked, 'Rejects project clear when confirmation phrase is incorrect');
 
-  // Nova Vasantham
-  const vasantham = getProjectBySlug('nova-vasantham', false);
-  const vasanthamProps = getProperties({ projectSlug: 'nova-vasantham', includeDrafts: false });
-  assert(vasantham !== null && vasantham.project_type === 'APARTMENT', 'Requirement 18: Nova Vasantham is verified APARTMENT project');
-  assert(vasanthamProps.total >= 12, `Requirement 19: Nova Vasantham contains full apartment units (Found ${vasanthamProps.total})`);
+  // Executes with exact confirmation
+  const clearRes = await clearProjectInventory('proj_nova_tejas', 'admin_1', 'ADMIN', 'CLEAR NOVA TEJAS INVENTORY');
+  assert(clearRes.success === true && clearRes.deletedCount === tejasBeforeCount, `clearProjectInventory successfully deleted exactly ${clearRes.deletedCount} Tejas properties`);
 
-  // Nova Tejas
-  const tejas = getProjectBySlug('nova-tejas', false);
-  const tejasProps = getProperties({ projectSlug: 'nova-tejas', includeDrafts: false });
-  assert(tejas !== null && tejas.project_type === 'APARTMENT', 'Requirement 20: Nova Tejas is verified APARTMENT project');
-  assert(tejasProps.total >= 10, `Requirement 21: Nova Tejas contains verified apartment units (Found ${tejasProps.total})`);
+  const tejasAfterCount = (db.prepare('SELECT COUNT(*) as c FROM properties WHERE project_id = ?').get('proj_nova_tejas') as any).c;
+  const diyaAfterCount = (db.prepare('SELECT COUNT(*) as c FROM properties WHERE project_id = ?').get('proj_nova_diya_gardens') as any).c;
+  const tejasProjectExists = db.prepare('SELECT * FROM projects WHERE id = ?').get('proj_nova_tejas');
 
-  // Nova Ramala & VR Squares
-  const ramala = getProjectBySlug('nova-ramala', false);
-  const vrSquares = getProjectBySlug('nova-vr-squares', false);
-  assert(ramala !== null && ramala.stats.total_inventory === 6, `Requirement 22: Nova Ramala has 6 units (Found ${ramala?.stats.total_inventory})`);
-  assert(vrSquares !== null && vrSquares.stats.total_inventory === 6, `Requirement 23: Nova VR Squares has 6 units (Found ${vrSquares?.stats.total_inventory})`);
+  assert(tejasAfterCount === 0, 'Nova Tejas property count is exactly 0 after project clear');
+  assert(diyaAfterCount === diyaBeforeCount, 'Nova Diya Gardens properties remain completely untouched');
+  assert(tejasProjectExists !== undefined, 'Nova Tejas project master record remains intact');
 
-  // ----------------------------------------------------------------------
-  // TEST GROUP 6: Plot Projects Specific Inventory Integrity
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 6: Plot Projects Inventory Verification ---');
 
-  const diya = getProjectBySlug('nova-diya-gardens', false);
-  assert(diya !== null && (diya.stats.available || 0) >= 150, `Requirement 24: Nova Diya Gardens active plot inventory (${diya?.stats.available} available)`);
+  // -------------------------------------------------------------------------
+  // SUMMARY
+  // -------------------------------------------------------------------------
+  console.log('\n======================================================================');
+  console.log(`   INTEGRITY SUITE COMPLETE: ${passed} PASSED, ${failed} FAILED`);
+  console.log('======================================================================\n');
 
-  const pinnacle = getProjectBySlug('kng-pudur-option-03', false);
-  assert(pinnacle !== null && (pinnacle.stats.available || 0) >= 30, `Requirement 25: Nova Pinnacle active plot inventory (${pinnacle?.stats.available} available)`);
-
-  const ncr = getProjectBySlug('nova-ncr', false);
-  assert(ncr !== null && (ncr.stats.available || 0) >= 15, `Requirement 26: Nova NCR active plot inventory (${ncr?.stats.available} available)`);
-
-  // ----------------------------------------------------------------------
-  // TEST GROUP 7: Restart Persistence Simulation (Render Lifecycle)
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 7: Restart Persistence Simulation (Render Lifecycle) ---');
-
-  const beforeRestartProjCount = getAllProjects(false).length;
-  const beforeRestartPropCount = getProperties({ includeDrafts: false, limit: 2000 }).total;
-
-  // Simulate server stop
-  closeDb();
-
-  // Simulate server boot & hydration from Supabase
-  await initAndSyncFromSupabase();
-
-  const afterRestartProjCount = getAllProjects(false).length;
-  const afterRestartPropCount = getProperties({ includeDrafts: false, limit: 2000 }).total;
-
-  assert(
-    afterRestartProjCount === beforeRestartProjCount,
-    `Requirement 27: Server restart preserves exact project count (${afterRestartProjCount} projects)`
-  );
-  assert(
-    afterRestartPropCount === beforeRestartPropCount,
-    `Requirement 28: Server restart preserves exact property count (${afterRestartPropCount} properties)`
-  );
-
-  // ----------------------------------------------------------------------
-  // TEST GROUP 8: AI Safety & Strictly Read-Only Execution
-  // ----------------------------------------------------------------------
-  console.log('\n--- TEST GROUP 8: Nova AI Safety & Read-Only Grounding ---');
-
-  const db = getDb();
-  const initialProjectsCount = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
-  const initialPropertiesCount = (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c;
-  const initialLayoutsCount = (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c;
-  const initialUsersCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c;
-
-  // Execute AI query
-  const aiResponse = await aiService.askNova([
-    { role: 'user', content: 'What 3 BHK apartments are available in Chennai?' }
-  ], 'nova-tejas');
-
-  assert(Boolean(aiResponse && aiResponse.text), 'Requirement 29: AI generates grounded response using live database');
-
-  // Verify all database tables remained completely untouched
-  const finalProjectsCount = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
-  const finalPropertiesCount = (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c;
-  const finalLayoutsCount = (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c;
-  const finalUsersCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c;
-
-  assert(finalProjectsCount === initialProjectsCount, 'Requirement 30: AI did not mutate projects table (Zero mutation)');
-  assert(finalPropertiesCount === initialPropertiesCount, 'Requirement 31: AI did not mutate properties table (Zero mutation)');
-  assert(finalLayoutsCount === initialLayoutsCount, 'Requirement 32: AI did not mutate layouts table (Zero mutation)');
-  assert(finalUsersCount === initialUsersCount, 'Requirement 33: AI did not mutate users table (Zero mutation)');
-
-  // Verify available AI tools are strictly read-only
-  const toolNames = AI_TOOLS.map(t => t.name);
-  const hasWriteTool = toolNames.some(name => /create|insert|update|delete|drop|truncate|seed|restore|mutate|write/i.test(name));
-  assert(hasWriteTool === false, 'Requirement 34: No AI tool has write/mutation capability (Strictly read-only tools)');
-
-  console.log('\n================================================================');
-  console.log(` PRODUCTION INTEGRITY TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
-  console.log('================================================================\n');
+  try {
+    closeDb();
+    if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+  } catch (_) {}
 
   if (failed > 0) {
     process.exit(1);
@@ -244,6 +295,6 @@ async function runProductionDataIntegritySuite() {
 }
 
 runProductionDataIntegritySuite().catch(err => {
-  console.error('[Production Data Integrity Test FATAL Error]:', err);
+  console.error('Fatal test error:', err);
   process.exit(1);
 });

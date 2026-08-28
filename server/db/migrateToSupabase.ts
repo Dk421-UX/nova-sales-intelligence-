@@ -144,22 +144,51 @@ export async function runSupabaseMigration(): Promise<MigrationReport> {
           for (const [k, v] of Object.entries(row)) {
             cleanRow[k] = v === undefined ? null : v;
           }
+
+          if (table === 'audit_logs' && cleanRow.project_id) {
+            const projExists = db.prepare('SELECT 1 FROM projects WHERE id = ?').get(cleanRow.project_id);
+            if (!projExists) {
+              cleanRow.project_id = null;
+            }
+          }
+
           toInsert.push(cleanRow);
         }
       }
 
       if (toInsert.length > 0) {
-        const { data: inserted, error: insertErr } = await supabase.from(table).upsert(toInsert, {
-          onConflict: 'id',
-          ignoreDuplicates: false
-        }).select();
+        // Chunk toInsert into smaller batches for reliability
+        const chunkSize = table === 'layouts' ? 1 : 25;
+        for (let c = 0; c < toInsert.length; c += chunkSize) {
+          const chunk = toInsert.slice(c, c + chunkSize);
+          let success = false;
+          let lastErr: any = null;
+          for (let attempt = 1; attempt <= 4; attempt++) {
+            try {
+              const { data: inserted, error: insertErr } = await supabase.from(table).upsert(chunk, {
+                onConflict: 'id',
+                ignoreDuplicates: false
+              }).select('id');
 
-        if (insertErr) {
-          console.error(`[Error] Failed to insert batch into ${table}:`, insertErr);
-          throw new Error(`Migration error on table ${table}: ${insertErr.message}`);
+              if (insertErr) {
+                lastErr = insertErr;
+                await new Promise(res => setTimeout(res, 1000 * attempt));
+                continue;
+              }
+              success = true;
+              report.migratedCounts[table] += (inserted?.length || chunk.length);
+              break;
+            } catch (err: any) {
+              lastErr = err;
+              await new Promise(res => setTimeout(res, 1000 * attempt));
+            }
+          }
+
+          if (!success) {
+            console.error(`[Error] Failed to insert batch into ${table}:`, lastErr);
+            throw new Error(`Migration error on table ${table}: ${lastErr?.message || String(lastErr)}`);
+          }
         }
-
-        report.migratedCounts[table] += (inserted?.length || toInsert.length);
       }
     }
 

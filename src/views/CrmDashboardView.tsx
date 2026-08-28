@@ -57,6 +57,16 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
+  // Project-Scoped Inventory Clear Modal State (Phase 10 & 11)
+  const [isClearInventoryOpen, setIsClearInventoryOpen] = useState(false);
+  const [clearInventoryInput, setClearInventoryInput] = useState('');
+  const [isClearingInventory, setIsClearingInventory] = useState(false);
+
+  // Danger Zone: Delete All Data Modal State
+  const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+  const [deleteAllInput, setDeleteAllInput] = useState('');
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -244,6 +254,55 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
     }
   };
 
+  const handleClearProjectInventory = async () => {
+    if (!currentProject) return;
+    const expectedConfirm = `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY`;
+    if (clearInventoryInput.trim().toUpperCase() !== expectedConfirm) {
+      alert(`You must enter the exact confirmation phrase: ${expectedConfirm}`);
+      return;
+    }
+
+    setIsClearingInventory(true);
+    try {
+      const res = await api.clearProjectInventory(currentProject.id, expectedConfirm);
+      setIsClearInventoryOpen(false);
+      setClearInventoryInput('');
+      alert(res.message || `Inventory cleared for ${currentProject.name}.`);
+      await loadProjects();
+      await loadProjectInventory(currentProject.id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to clear project inventory.');
+    } finally {
+      setIsClearingInventory(false);
+    }
+  };
+
+  const handleDeleteAllData = async () => {
+    if (deleteAllInput !== 'DELETE ALL DATA') {
+      alert('You must enter the exact confirmation phrase: DELETE ALL DATA');
+      return;
+    }
+
+    setIsDeletingAll(true);
+    try {
+      const res = await api.deleteAllCrmData('DELETE ALL DATA');
+      setIsDeleteAllOpen(false);
+      setDeleteAllInput('');
+      setProjects([]);
+      setSelectedProjectId('');
+      setProperties([]);
+      setBuildings([]);
+      setLayout(null);
+      setAllLayouts([]);
+      alert(res.message || 'All catalog and inventory data has been permanently deleted from production.');
+      await loadProjects();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete all data.');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   if (!currentProject) {
     if (loadError) {
       return (
@@ -427,11 +486,35 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
 
               <button 
                 className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setClearInventoryInput('');
+                  setIsClearInventoryOpen(true);
+                }}
+                style={{ color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.35)' }}
+                title={`Clear/Replace Inventory for ${currentProject.name}`}
+              >
+                <Trash2 size={15} /> Clear Inventory
+              </button>
+
+              <button 
+                className="btn btn-secondary btn-sm"
                 onClick={() => setIsDeleteProjectOpen(true)}
                 style={{ color: '#ef4444' }}
-                title="Delete Project"
+                title="Delete Current Project"
               >
                 <Trash2 size={15} /> Delete Project
+              </button>
+
+              <button 
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setDeleteAllInput('');
+                  setIsDeleteAllOpen(true);
+                }}
+                style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+                title="Danger Zone: Permanently Delete All Data"
+              >
+                <AlertTriangle size={15} /> Delete All Data
               </button>
 
               <button 
@@ -1057,6 +1140,135 @@ export const CrmDashboardView: React.FC<CrmDashboardViewProps> = ({ onLogout }) 
                 disabled={isDeletingProject}
               >
                 {isDeletingProject ? 'Deleting...' : 'Permanently Delete Project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Project Inventory Modal (Phase 10 & 11) */}
+      {isClearInventoryOpen && currentProject && (
+        <div className="modal-overlay" onClick={() => setIsClearInventoryOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '520px', border: '1px solid rgba(245, 158, 11, 0.4)' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ background: 'rgba(245, 158, 11, 0.1)', borderBottom: '1px solid rgba(245, 158, 11, 0.25)' }}>
+              <h3 style={{ fontSize: '1.15rem', color: '#f59e0b', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+                <AlertTriangle size={20} /> Clear Project Inventory: {currentProject.name}
+              </h3>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <p style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+                This will remove all property inventory units for <strong>{currentProject.name}</strong> to allow a fresh Excel import or inventory replacement.
+              </p>
+
+              <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.85rem', color: '#fde68a', lineHeight: 1.6 }}>
+                <div>• <strong>{currentProject.stats.total_inventory} inventory units</strong> will be cleared from this project.</div>
+                <div>• <strong>Project record and CAD layouts will remain intact.</strong></div>
+                <div>• All <strong>other {projects.length - 1} projects</strong> will remain completely untouched.</div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 600 }}>
+                  To confirm, type <span style={{ color: '#f59e0b', fontWeight: 800, userSelect: 'all' }}>CLEAR {currentProject.name.toUpperCase().trim()} INVENTORY</span> below:
+                </label>
+                <input
+                  type="text"
+                  value={clearInventoryInput}
+                  onChange={e => setClearInventoryInput(e.target.value)}
+                  placeholder={`Type CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY`}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'var(--bg-surface-raised)',
+                    border: '1px solid ' + (clearInventoryInput.trim().toUpperCase() === `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY` ? '#f59e0b' : 'var(--border-medium)'),
+                    borderRadius: 'var(--radius-sm)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em'
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setIsClearInventoryOpen(false)} disabled={isClearingInventory}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{
+                  background: clearInventoryInput.trim().toUpperCase() === `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY` ? '#d97706' : 'rgba(217, 119, 6, 0.4)',
+                  borderColor: clearInventoryInput.trim().toUpperCase() === `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY` ? '#b45309' : 'transparent',
+                  cursor: clearInventoryInput.trim().toUpperCase() === `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY` && !isClearingInventory ? 'pointer' : 'not-allowed'
+                }}
+                onClick={handleClearProjectInventory}
+                disabled={clearInventoryInput.trim().toUpperCase() !== `CLEAR ${currentProject.name.toUpperCase().trim()} INVENTORY` || isClearingInventory}
+              >
+                {isClearingInventory ? 'Clearing Inventory...' : 'Confirm Clear Project Inventory'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Danger Zone: Permanent Delete All Data Modal */}
+      {isDeleteAllOpen && (
+        <div className="modal-overlay" onClick={() => setIsDeleteAllOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '520px', border: '1px solid rgba(239, 68, 68, 0.4)' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ background: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid rgba(239, 68, 68, 0.25)' }}>
+              <h3 style={{ fontSize: '1.2rem', color: '#ef4444', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+                <AlertTriangle size={22} /> Danger Zone: Delete All Production Data
+              </h3>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
+              <p style={{ color: '#fff', fontSize: '0.98rem', fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+                This will permanently delete all Nova projects, properties, layouts, versions, and inventory records across the entire system.
+              </p>
+
+              <div style={{ background: 'rgba(239, 68, 68, 0.08)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.25)', fontSize: '0.85rem', color: '#fca5a5', lineHeight: 1.6 }}>
+                <div>• All <strong>{projects.length} project catalogs</strong> will be wiped from Supabase.</div>
+                <div>• All <strong>customer property listings &amp; master plans</strong> will be cleared.</div>
+                <div>• Customer-facing website will immediately enter an empty state.</div>
+                <div>• <strong>This action is irreversible and cannot be undone.</strong></div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 600 }}>
+                  To confirm, type <span style={{ color: '#ef4444', fontWeight: 800, userSelect: 'all' }}>DELETE ALL DATA</span> below:
+                </label>
+                <input
+                  type="text"
+                  value={deleteAllInput}
+                  onChange={e => setDeleteAllInput(e.target.value)}
+                  placeholder="Type DELETE ALL DATA exactly"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'var(--bg-surface-raised)',
+                    border: '1px solid ' + (deleteAllInput === 'DELETE ALL DATA' ? '#ef4444' : 'var(--border-medium)'),
+                    borderRadius: 'var(--radius-sm)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em'
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setIsDeleteAllOpen(false)} disabled={isDeletingAll}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{
+                  background: deleteAllInput === 'DELETE ALL DATA' ? '#dc2626' : 'rgba(220, 38, 38, 0.4)',
+                  borderColor: deleteAllInput === 'DELETE ALL DATA' ? '#b91c1c' : 'transparent',
+                  cursor: deleteAllInput === 'DELETE ALL DATA' && !isDeletingAll ? 'pointer' : 'not-allowed'
+                }}
+                onClick={handleDeleteAllData}
+                disabled={deleteAllInput !== 'DELETE ALL DATA' || isDeletingAll}
+              >
+                {isDeletingAll ? 'Deleting All Data...' : 'Permanently Delete All Production Data'}
               </button>
             </div>
           </div>

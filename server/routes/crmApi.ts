@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import { 
   getAllProjects, getProjectById, createProject, updateProject, deleteProject, reconfigureProjectType, 
-  getProjectVersions, getProjectHealth, getProjectLayout, getProjectLayouts, uploadProjectLayout, publishLayout, deleteLayout 
+  getProjectVersions, getProjectHealth, getProjectLayout, getProjectLayouts, uploadProjectLayout, publishLayout, deleteLayout,
+  clearProjectInventory
 } from '../services/projectService.ts';
 import { getProperties, getPropertyById, createProperty, updateProperty, stageStatusUpdate, archiveProperty, savePropertyGeometry } from '../services/propertyService.ts';
 import { getPendingDrafts, publishProjectDrafts, discardDraftChanges } from '../services/publishService.ts';
@@ -18,6 +19,7 @@ import { getAuditLogs } from '../services/auditService.ts';
 import { officialWebsiteService } from '../services/officialWebsiteService.ts';
 import { layoutAnalysisService } from '../services/layoutAnalysisService.ts';
 import { uploadLayoutToStorage } from '../services/storageService.ts';
+import { deleteAllProductionData } from '../db/supabaseSync.ts';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -537,3 +539,37 @@ crmRouter.get('/audit-logs', authenticateToken, (req: AuthRequest, res: Response
     res.status(500).json({ error: err.message || 'Failed to fetch audit logs.' });
   }
 });
+
+crmRouter.post('/projects/:id/clear-inventory', authenticateToken, requireRole(['ADMIN', 'CRM_STAFF']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { confirmation } = req.body;
+    const projectId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const result = await clearProjectInventory(projectId, req.user!.id, req.user!.role, confirmation);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to clear project inventory.' });
+  }
+});
+
+// ==========================================
+// DANGER ZONE / DATA MANAGEMENT
+// ==========================================
+
+crmRouter.post('/data/delete-all', authenticateToken, requireRole(['ADMIN']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { confirmation } = req.body;
+    if (!confirmation || confirmation !== 'DELETE ALL DATA') {
+      return res.status(400).json({
+        error: 'Confirmation failed. You must provide the exact confirmation string "DELETE ALL DATA".'
+      });
+    }
+
+    const isTestMode = req.headers['x-test-mode'] === 'true' || process.env.NODE_ENV === 'test';
+    const result = await deleteAllProductionData(req.user!.id, req.user!.role, confirmation, isTestMode);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[CRM Delete All Data Error]:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to delete all data.' });
+  }
+});
+

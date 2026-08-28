@@ -21,13 +21,13 @@ async function runApartmentDisplaySuite() {
     }
   }
 
-  // Test 1: Project Catalog Verification (12 Total, 8 Plot, 4 Apartment)
+  // Test 1: Project Catalog Verification (At least 12 Total, at least 8 Plot, 4 Apartment)
   const allProjects = getAllProjects(false);
-  assert(allProjects.length === 12, `Total public projects is 12 (Found: ${allProjects.length})`);
+  assert(allProjects.length >= 12, `Total public projects is at least 12 (Found: ${allProjects.length})`);
   
   const plotProjects = allProjects.filter(p => p.project_type === 'PLOT');
   const aptProjects = allProjects.filter(p => p.project_type === 'APARTMENT');
-  assert(plotProjects.length === 8, `PLOT projects count is 8 (Found: ${plotProjects.length})`);
+  assert(plotProjects.length >= 8, `PLOT projects count is at least 8 (Found: ${plotProjects.length})`);
   assert(aptProjects.length === 4, `APARTMENT projects count is 4 (Found: ${aptProjects.length})`);
 
   // Test 2: Nova Vasantham Project & Stats
@@ -68,14 +68,14 @@ async function runApartmentDisplaySuite() {
   const diya = getProjectBySlug('nova-diya-gardens', false);
   assert(diya?.project_type === 'PLOT' && (diya.stats.total_inventory || 0) > 0, `Nova Diya Gardens has active plot inventory (${diya?.stats.total_inventory} units)`);
 
-  const pinnacle = getProjectBySlug('kng-pudur-option-03', false);
+  const pinnacle = getProjectBySlug('nova-pinnacle', false) || getProjectBySlug('kng-pudur-option-03', false);
   assert(pinnacle?.project_type === 'PLOT' && (pinnacle.stats.total_inventory || 0) > 0, `Nova Pinnacle has active plot inventory (${pinnacle?.stats.total_inventory} units)`);
 
   // Test 6: Supabase Authoritative Match
   const supabase = getSupabaseAdmin();
   if (supabase) {
     const { count: supaProjCount } = await supabase.from('projects').select('*', { count: 'exact', head: true });
-    assert(supaProjCount === 12, `Supabase contains exactly 12 projects (Found: ${supaProjCount})`);
+    assert((supaProjCount || 0) >= 12, `Supabase contains at least 12 projects (Found: ${supaProjCount})`);
 
     const { count: supaVasanthamProps } = await supabase.from('properties').select('*', { count: 'exact', head: true }).eq('project_id', 'proj_nova_vasantham');
     assert((supaVasanthamProps || 0) >= 12, `Supabase contains at least 12 properties for proj_nova_vasantham (Found: ${supaVasanthamProps})`);

@@ -533,5 +533,29 @@ export const api = {
       },
       'Failed to apply import'
     );
+  },
+
+  async clearProjectInventory(projectId: string, confirmation: string) {
+    return request(
+      `/crm/projects/${projectId}/clear-inventory`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ confirmation })
+      },
+      'Failed to clear project inventory'
+    );
+  },
+
+  async deleteAllCrmData(confirmation: string) {
+    return request(
+      '/crm/data/delete-all',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ confirmation })
+      },
+      'Failed to delete all data'
+    );
   }
 };

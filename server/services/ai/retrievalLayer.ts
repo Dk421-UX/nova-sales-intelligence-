@@ -105,16 +105,23 @@ export class AiRetrievalLayer {
     `;
     const params: any[] = [projectId];
 
-    if (filters.status) {
+    if (filters.status && filters.status.toUpperCase() !== 'ALL') {
       query += ' AND status = ?';
       params.push(filters.status.toUpperCase());
-    } else {
+    } else if (!filters.status) {
       query += ' AND status = "AVAILABLE"';
     }
 
     if (filters.facing) {
       query += ' AND LOWER(facing) LIKE LOWER(?)';
       params.push(`%${filters.facing.trim()}%`);
+    }
+
+    if (filters.negatedFacing && filters.negatedFacing.length > 0) {
+      for (const nf of filters.negatedFacing) {
+        query += ' AND (facing IS NULL OR LOWER(facing) NOT LIKE LOWER(?))';
+        params.push(`%${nf.trim()}%`);
+      }
     }
 
     if (filters.unitType) {
@@ -145,8 +152,20 @@ export class AiRetrievalLayer {
     const countSql = query.replace('SELECT *', 'SELECT COUNT(*) as count');
     const totalMatch = (db.prepare(countSql).get(...params) as any)?.count || 0;
 
-    query += ' ORDER BY CAST(property_number AS INTEGER) ASC, property_number ASC LIMIT ?';
-    params.push(limit);
+    let orderBy = 'ORDER BY CAST(property_number AS INTEGER) ASC, property_number ASC';
+    if (filters.sortBy === 'area_asc') {
+      orderBy = 'ORDER BY COALESCE(saleable_area_sqft, area_sqft, 0) ASC, CAST(property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'area_desc') {
+      orderBy = 'ORDER BY COALESCE(saleable_area_sqft, area_sqft, 0) DESC, CAST(property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'price_asc') {
+      orderBy = 'ORDER BY price ASC, CAST(property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'price_desc') {
+      orderBy = 'ORDER BY price DESC, CAST(property_number AS INTEGER) ASC';
+    }
+
+    const effectiveLimit = filters.limit || limit;
+    query += ` ${orderBy} LIMIT ?`;
+    params.push(effectiveLimit);
 
     const rows = db.prepare(query).all(...params) as any[];
 
@@ -201,10 +220,10 @@ export class AiRetrievalLayer {
     `;
     const params: any[] = [];
 
-    if (filters.status) {
+    if (filters.status && filters.status.toUpperCase() !== 'ALL') {
       query += ' AND pr.status = ?';
       params.push(filters.status.toUpperCase());
-    } else {
+    } else if (!filters.status) {
       query += ' AND pr.status = "AVAILABLE"';
     }
 
@@ -233,6 +252,18 @@ export class AiRetrievalLayer {
       params.push(`%${filters.facing.trim()}%`);
     }
 
+    if (filters.negatedFacing && filters.negatedFacing.length > 0) {
+      for (const nf of filters.negatedFacing) {
+        query += ' AND (pr.facing IS NULL OR LOWER(pr.facing) NOT LIKE LOWER(?))';
+        params.push(`%${nf.trim()}%`);
+      }
+    }
+
+    if (filters.sectionOrPhase) {
+      query += ' AND LOWER(pr.section_or_phase) LIKE ?';
+      params.push(`%${filters.sectionOrPhase.toLowerCase()}%`);
+    }
+
     if (filters.minArea !== undefined) {
       query += ' AND (pr.area_sqft >= ? OR pr.saleable_area_sqft >= ?)';
       params.push(filters.minArea, filters.minArea);
@@ -246,8 +277,20 @@ export class AiRetrievalLayer {
     const countSql = query.replace('SELECT pr.*, p.name as project_name, p.slug as project_slug, p.location as project_location, p.city as project_city', 'SELECT COUNT(*) as count');
     const totalMatch = (db.prepare(countSql).get(...params) as any)?.count || 0;
 
-    query += ' ORDER BY p.name ASC, CAST(pr.property_number AS INTEGER) ASC, pr.property_number ASC LIMIT ?';
-    params.push(limit);
+    let orderBy = 'ORDER BY p.name ASC, CAST(pr.property_number AS INTEGER) ASC, pr.property_number ASC';
+    if (filters.sortBy === 'area_asc') {
+      orderBy = 'ORDER BY COALESCE(pr.saleable_area_sqft, pr.area_sqft, 0) ASC, CAST(pr.property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'area_desc') {
+      orderBy = 'ORDER BY COALESCE(pr.saleable_area_sqft, pr.area_sqft, 0) DESC, CAST(pr.property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'price_asc') {
+      orderBy = 'ORDER BY pr.price ASC, CAST(pr.property_number AS INTEGER) ASC';
+    } else if (filters.sortBy === 'price_desc') {
+      orderBy = 'ORDER BY pr.price DESC, CAST(pr.property_number AS INTEGER) ASC';
+    }
+
+    const effectiveLimit = filters.limit || limit;
+    query += ` ${orderBy} LIMIT ?`;
+    params.push(effectiveLimit);
 
     const rows = db.prepare(query).all(...params) as any[];
 

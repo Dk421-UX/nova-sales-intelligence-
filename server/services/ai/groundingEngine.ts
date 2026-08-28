@@ -5,10 +5,19 @@ export class AiGroundingEngine {
    * Determine response provenance (GENERAL_KNOWLEDGE | NOVA_DATABASE | NOVA_PROJECT_CONTENT | HYBRID)
    */
   determineProvenance(plan: QueryPlan, contexts: RetrievedContext[]): ResponseProvenance {
-    if (plan.intent === 'GENERAL_KNOWLEDGE' || plan.intent === 'GREETING' || plan.responseMode === 'GENERAL_REAL_ESTATE') {
+    if (
+      plan.intent === 'GENERAL_KNOWLEDGE' ||
+      plan.intent === 'GENERAL_REAL_ESTATE_KNOWLEDGE' ||
+      plan.intent === 'GREETING' ||
+      plan.intent === 'CASUAL_CONVERSATION' ||
+      plan.intent === 'GENERAL_PROPERTY_ADVICE' ||
+      plan.intent === 'GENERAL_FINANCIAL_GUIDANCE' ||
+      plan.responseMode === 'GENERAL_REAL_ESTATE' ||
+      plan.responseMode === 'CASUAL'
+    ) {
       return 'GENERAL_KNOWLEDGE';
     }
-    if (plan.intent === 'MIXED') {
+    if (plan.intent === 'MIXED' || plan.responseMode === 'MIXED') {
       return 'HYBRID';
     }
     if (contexts.some(c => c.sourceType === 'LIVE_INVENTORY')) {
@@ -40,7 +49,7 @@ export class AiGroundingEngine {
     }
 
     // 2. If intent is CLARIFICATION
-    if (plan.intent === 'CLARIFICATION' && plan.clarificationQuestion) {
+    if ((plan.intent === 'CLARIFICATION' || plan.responseMode === 'CLARIFICATION') && plan.clarificationQuestion) {
       return {
         text: plan.clarificationQuestion,
         status: 'VERIFIED',
@@ -48,8 +57,18 @@ export class AiGroundingEngine {
       };
     }
 
-    // 3. If intent is GREETING or pure GENERAL_KNOWLEDGE / GENERAL_REAL_ESTATE
-    if (plan.intent === 'GREETING' || plan.intent === 'GENERAL_KNOWLEDGE' || plan.responseMode === 'GENERAL_REAL_ESTATE') {
+    // 3. If intent is GREETING or pure GENERAL_KNOWLEDGE / CASUAL
+    if (
+      plan.intent === 'GREETING' ||
+      plan.intent === 'CASUAL_CONVERSATION' ||
+      plan.intent === 'GENERAL_KNOWLEDGE' ||
+      plan.intent === 'GENERAL_REAL_ESTATE_KNOWLEDGE' ||
+      plan.intent === 'GENERAL_PROPERTY_ADVICE' ||
+      plan.intent === 'GENERAL_FINANCIAL_GUIDANCE' ||
+      plan.responseMode === 'GENERAL_REAL_ESTATE' ||
+      plan.responseMode === 'CASUAL' ||
+      plan.responseMode === 'GREETING'
+    ) {
       return {
         text: rawText,
         status: 'GENERAL_ONLY',

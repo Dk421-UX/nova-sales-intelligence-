@@ -1,9 +1,15 @@
 export type IntentType =
   | 'GREETING'
+  | 'CASUAL_CONVERSATION'
   | 'GENERAL_CONVERSATION'
   | 'GENERAL_REAL_ESTATE'
+  | 'GENERAL_REAL_ESTATE_KNOWLEDGE'
+  | 'GENERAL_PROPERTY_ADVICE'
+  | 'GENERAL_FINANCIAL_GUIDANCE'
   | 'GENERAL_KNOWLEDGE'
   | 'NOVA_OVERVIEW'
+  | 'NOVA_PROJECT_INFORMATION'
+  | 'NOVA_CATALOG_QUERY'
   | 'PROJECT_SEARCH'
   | 'PROJECT_DETAILS'
   | 'PROJECT_INFORMATION'
@@ -16,6 +22,14 @@ export type IntentType =
   | 'PROPERTY_LOOKUP'
   | 'PROPERTY_DETAILS'
   | 'PROPERTY_COMPARISON'
+  | 'PROJECT_COMPARISON'
+  | 'PROPERTY_EVALUATION'
+  | 'PROPERTY_RECOMMENDATION'
+  | 'FOLLOW_UP'
+  | 'FILTER_MODIFICATION'
+  | 'CALCULATION'
+  | 'BUYING_CONSIDERATION'
+  | 'TOPIC_SWITCH'
   | 'LAYOUT_QUERY'
   | 'PROPERTY_ATTRIBUTE_QUERY'
   | 'NOVA_COMPANY_QUERY'
@@ -33,6 +47,7 @@ export type IntentType =
 export type ResponseMode =
   | 'GENERAL'
   | 'GREETING'
+  | 'CASUAL'
   | 'GENERAL_REAL_ESTATE'
   | 'NOVA_GENERAL'
   | 'PROJECT_GROUNDED'
@@ -40,6 +55,7 @@ export type ResponseMode =
   | 'LAYOUT_INTELLIGENCE'
   | 'MIXED'
   | 'RECOMMENDATION'
+  | 'COMPARISON'
   | 'CLARIFICATION'
   | 'NO_VERIFIED_RESULT'
   | 'UNSUPPORTED';
@@ -91,6 +107,7 @@ export interface RetrievedContext {
 export interface InventoryFilters {
   status?: string;
   facing?: string;
+  negatedFacing?: string[];
   minArea?: number;
   maxArea?: number;
   unitType?: string;
@@ -99,6 +116,8 @@ export interface InventoryFilters {
   location?: string;
   city?: string;
   projectSlug?: string;
+  sortBy?: 'area_asc' | 'area_desc' | 'price_asc' | 'price_desc' | 'default';
+  limit?: number;
 }
 
 export interface ConversationContext {
@@ -110,14 +129,21 @@ export interface ConversationContext {
   propertyType?: 'PLOT' | 'APARTMENT' | 'COMMERCIAL_SHOP';
   configuration?: string;
   facing?: string;
+  negatedFacing?: string[];
   minArea?: number;
   maxArea?: number;
   budget?: number;
   status?: string;
   propertyNumber?: string;
+  activeTopic?: 'GENERAL_KNOWLEDGE' | 'PROPERTY_SEARCH' | 'PROJECT_EXPLORATION' | 'CASUAL';
+  savedSearchContext?: Partial<ConversationContext>;
+  lastMentionedProperties?: string[];
+  lastRetrievedCount?: number;
+  lastRetrievedSample?: string[];
+  sortBy?: 'area_asc' | 'area_desc' | 'price_asc' | 'price_desc';
 }
 
-export type ContextAction = 'NEW_INDEPENDENT_REQUEST' | 'FOLLOW_UP_REQUEST' | 'CONTINUATION' | 'GENERAL_EDUCATION';
+export type ContextAction = 'NEW_INDEPENDENT_REQUEST' | 'FOLLOW_UP_REQUEST' | 'CONTINUATION' | 'GENERAL_EDUCATION' | 'TOPIC_SWITCH' | 'CORRECTION';
 
 export type SearchScope = 'ALL_NOVA_PROJECTS' | 'LOCATION_SCOPED' | 'SINGLE_PROJECT_SCOPED' | 'NONE';
 
@@ -138,14 +164,22 @@ export interface QueryPlan {
   contextAction?: ContextAction;
   retainedContext?: Partial<ConversationContext>;
   clearedContext?: Partial<ConversationContext>;
+  savedSearchContext?: Partial<ConversationContext>;
   filters?: InventoryFilters;
   propertyNumbers?: string[];
+  comparisonProperties?: string[];
   spatialTarget?: {
     feature: string; // 'park', 'entrance', 'road', 'amenity'
     plotNumber?: string;
   };
   isAmbiguous: boolean;
   clarificationQuestion?: string;
+  educationalConcept?: string;
+  calculationDetails?: {
+    expression: string;
+    result: number;
+    explanation: string;
+  };
 }
 
 export interface AiRequestLog {
@@ -170,4 +204,5 @@ export interface ChatMessage {
   tool_calls?: any[];
   name?: string;
 }
+
 
