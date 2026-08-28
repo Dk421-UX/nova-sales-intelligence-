@@ -12,12 +12,22 @@ import {
 
 // Known project aliases, customer-facing names, and legacy/internal names
 const PROJECT_ALIASES: Record<string, string> = {
-  // Nova Pinnacle
+  // Nova Pinnacle / KNG Pudur (Customer-Facing & Legacy)
   'pinnacle': 'nova-pinnacle',
   'pinncale': 'nova-pinnacle',
   'pinacle': 'nova-pinnacle',
   'nova pinnacle': 'nova-pinnacle',
   'nova pinncale': 'nova-pinnacle',
+  'kng': 'nova-pinnacle',
+  'kng pudur': 'nova-pinnacle',
+  'nova kng pudur': 'nova-pinnacle',
+  'nova kng': 'nova-pinnacle',
+  'kng pudur — option 03': 'nova-pinnacle',
+  'kng pudur - option 03': 'nova-pinnacle',
+  'kng pudur option 03': 'nova-pinnacle',
+  'kng option 03': 'nova-pinnacle',
+  'option 03': 'nova-pinnacle',
+  'option 3': 'nova-pinnacle',
 
   // Nova Diya Gardens (Customer-Facing & Legacy)
   'diya': 'nova-diya-gardens',
@@ -34,18 +44,6 @@ const PROJECT_ALIASES: Record<string, string> = {
   'diya garden and extension i': 'nova-diya-gardens',
   'extension i': 'nova-diya-gardens',
   'extension 1': 'nova-diya-gardens',
-
-  // Nova KNG Pudur / Pinnacle (Customer-Facing & Legacy)
-  'kng': 'kng-pudur-option-03',
-  'kng pudur': 'kng-pudur-option-03',
-  'nova kng pudur': 'kng-pudur-option-03',
-  'nova kng': 'kng-pudur-option-03',
-  'kng pudur — option 03': 'kng-pudur-option-03',
-  'kng pudur - option 03': 'kng-pudur-option-03',
-  'kng pudur option 03': 'kng-pudur-option-03',
-  'kng option 03': 'kng-pudur-option-03',
-  'option 03': 'kng-pudur-option-03',
-  'option 3': 'kng-pudur-option-03',
 
   // Nova NCR (Customer-Facing & Legacy)
   'ncr': 'nova-ncr',

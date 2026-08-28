@@ -43,7 +43,7 @@ async function runUltraSuite() {
   assert(pinnacle?.stats?.available !== undefined && pinnacle?.stats?.available >= 0, 'Nova Pinnacle has valid available count');
   
   const pinnacleLayout = getProjectLayout('proj_nova_pinnacle');
-  assert(pinnacleLayout === null, 'Nova Pinnacle starts with null layout (Mode C clean baseline)');
+  assert(Boolean(pinnacleLayout), 'Nova Pinnacle master record has registered layout');
 
   const coimbatoreProjects = getAllProjects().filter(p => p.city.toLowerCase() === 'coimbatore');
   assert(coimbatoreProjects.some(p => p.slug === 'nova-pinnacle'), 'Nova Pinnacle appears in Coimbatore city filter');
@@ -52,7 +52,7 @@ async function runUltraSuite() {
   // 2. CRM LAYOUT LIFECYCLE MANAGEMENT
   // -------------------------------------------------------------
   console.log('\n--- TEST GROUP 2: CRM Layout Lifecycle (Draft, Publish, Archive, Delete & Storage Cleanup) ---');
-  const testProjId = 'proj_nova_pinnacle';
+  const testProjId = 'proj_nova_city';
 
   // 2.1 Upload Draft Layout
   const draftLayout: any = uploadProjectLayout(
@@ -190,9 +190,9 @@ async function runUltraSuite() {
   assert(diyaP?.name === 'Nova Diya Gardens', 'Project 1 display name is exactly "Nova Diya Gardens"');
   assert(diyaP?.id === 'proj_nova_diya_gardens', 'Diya Gardens canonical project ID is preserved');
 
-  const kngP = getProjectBySlug('kng-pudur-option-03');
+  const kngP = getProjectBySlug('nova-pinnacle');
   assert(kngP?.name === 'Nova Pinnacle', 'Project 2 display name is exactly "Nova Pinnacle"');
-  assert(kngP?.id === 'proj_kng_pudur_opt3', 'Nova Pinnacle canonical project ID is preserved');
+  assert(kngP?.id === 'proj_nova_pinnacle', 'Nova Pinnacle canonical project ID is preserved');
 
   const ncrP = getProjectBySlug('nova-ncr');
   assert(ncrP?.name === 'Nova NCR', 'Project 3 display name is exactly "Nova NCR"');
@@ -200,7 +200,7 @@ async function runUltraSuite() {
 
   // 4.2 Verify NO duplicate projects were created
   const allProjs = getAllProjects(true);
-  const kngMatches = allProjs.filter(p => p.slug === 'kng-pudur-option-03' && p.name === 'Nova Pinnacle');
+  const kngMatches = allProjs.filter(p => p.slug === 'nova-pinnacle' && p.name === 'Nova Pinnacle');
   assert(kngMatches.length === 1, 'Exactly one single canonical project record exists for Nova Pinnacle (no duplicates)');
 
   const diyaMatches = allProjs.filter(p => p.slug === 'nova-diya-gardens' || p.name.includes('Diya Garden'));
@@ -211,10 +211,10 @@ async function runUltraSuite() {
 
   // 4.3 AI recognizes BOTH customer-facing names and legacy/internal names
   const aiKngNew = aiIntentRouter.planQuery([{ role: 'user', content: 'tell me about Nova Pinnacle' }]);
-  assert(aiKngNew.targetProjectSlug === 'nova-pinnacle' || aiKngNew.targetProjectSlug === 'kng-pudur-option-03', 'AI maps customer-facing "Nova Pinnacle" to valid project slug');
+  assert(aiKngNew.targetProjectSlug === 'nova-pinnacle', 'AI maps customer-facing "Nova Pinnacle" to valid project slug');
 
   const aiKngLegacy = aiIntentRouter.planQuery([{ role: 'user', content: 'what is KNG Pudur — Option 03?' }]);
-  assert(aiKngLegacy.targetProjectSlug === 'kng-pudur-option-03', 'AI maps legacy "KNG Pudur — Option 03" to kng-pudur-option-03');
+  assert(aiKngLegacy.targetProjectSlug === 'nova-pinnacle', 'AI maps legacy "KNG Pudur — Option 03" to canonical nova-pinnacle');
 
   const aiDiyaNew = aiIntentRouter.planQuery([{ role: 'user', content: 'tell me about Nova Diya Gardens' }]);
   assert(aiDiyaNew.targetProjectSlug === 'nova-diya-gardens', 'AI maps customer-facing "Nova Diya Gardens" to nova-diya-gardens');

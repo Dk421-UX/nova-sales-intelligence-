@@ -61,9 +61,41 @@ const VERIFIED_LAYOUT_ANALYSES: Record<string, LayoutAnalysis> = {
     reviewedAt: '2026-08-19T10:00:00Z',
     reviewedBy: 'usr_admin'
   },
+  'proj_nova_pinnacle': {
+    projectId: 'proj_nova_pinnacle',
+    layoutId: 'lay_pinnacle_1',
+    projectName: 'Nova Pinnacle',
+    layoutType: 'SCHEME_PLAN',
+    roads: ['12m Main Access Road', '10m Collector Road', '9m Internal Layout Roads', '7.2m Cross Streets'],
+    entrances: ['Primary East Entrance Corridor', 'North-West Secondary Access'],
+    parks: ['23,062 sq.ft Central OSR Park', 'Green Buffer Belt'],
+    amenities: ['1,271 sq.ft TANGEDCO Space', '1,184 sq.ft Public Purpose Site', '23,315 sq.ft EWS Block Allocation'],
+    sections: ['Main Plotted Sector', 'EWS Residential Enclave'],
+    visiblePropertyLabels: ['1', '2', '3', '10', '25', '50', '75', '100', '129'],
+    legend: {
+      'OSR': 'Open Space Reservation (23,062 sq.ft)',
+      'TANGEDCO': 'Electrical Sub-station Reservation',
+      'PP': 'Public Purpose Space',
+      'EWS': 'Economically Weaker Section Site Block'
+    },
+    notes: [
+      'Total Site Area: 7.89 Acres (344,098 sq.ft)',
+      'Total Regular Plots: 129 Sites | EWS Plots: 37 Sites'
+    ],
+    confidence: {
+      projectName: 0.99,
+      plotLabels: 0.95,
+      roadNetwork: 0.97,
+      osrReserves: 0.98,
+      overall: 0.97
+    },
+    isReviewedByCrm: true,
+    reviewedAt: '2026-08-19T10:00:00Z',
+    reviewedBy: 'usr_admin'
+  },
   'proj_kng_pudur_opt3': {
-    projectId: 'proj_kng_pudur_opt3',
-    layoutId: 'lay_kng_1',
+    projectId: 'proj_nova_pinnacle',
+    layoutId: 'lay_pinnacle_1',
     projectName: 'Nova Pinnacle',
     layoutType: 'SCHEME_PLAN',
     roads: ['12m Main Access Road', '10m Collector Road', '9m Internal Layout Roads', '7.2m Cross Streets'],

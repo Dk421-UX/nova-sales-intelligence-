@@ -755,6 +755,10 @@ export async function clearProjectInventory(
   userRole: string,
   confirmation: string
 ): Promise<{ success: boolean; message: string; projectId: string; deletedCount: number }> {
+  if (userRole !== 'ADMIN' && userRole !== 'CRM_STAFF') {
+    throw new Error('Unauthorized: Only administrators with ADMIN or CRM_STAFF role can clear project inventory.');
+  }
+
   const db = getDb();
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as any;
   if (!project) {

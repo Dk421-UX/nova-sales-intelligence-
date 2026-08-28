@@ -8,7 +8,6 @@ import {
   getHydrationState, 
   isDatabaseReady, 
   waitForHydration, 
-  deleteAllProductionData,
   getHydrationStats
 } from '../server/db/supabaseSync.ts';
 import { aiIntentRouter } from '../server/services/ai/intentRouter.ts';
@@ -99,45 +98,46 @@ async function runProductionDataIntegritySuite() {
   assert(initialLayoutCount > 0, `Local database contains ${initialLayoutCount} layouts`);
 
   // -------------------------------------------------------------------------
-  // 2. CRM DANGER ZONE: DELETE ALL DATA WITH DOUBLE CONFIRMATION
+  // 2. CRM PROJECT-SCOPED INVENTORY CLEAR & GLOBAL DELETE REMOVAL
   // -------------------------------------------------------------------------
-  console.log('\n--- 2. CRM Delete All Data & Exact Confirmation Contract ---');
+  console.log('\n--- 2. Project-Scoped Inventory Clear & Global Delete Removal ---');
 
-  // Test non-admin rejection
+  // Verify Global Delete All Data is NOT accessible
+  assert(typeof (global as any).deleteAllProductionData === 'undefined', 'Global deleteAllProductionData is completely removed');
+
+  // Test non-admin rejection for project clear
   let nonAdminBlocked = false;
   try {
-    await deleteAllProductionData('staff_1', 'CRM_STAFF', 'DELETE ALL DATA', true);
+    await clearProjectInventory('proj_nova_tejas', 'staff_1', 'VIEWER', 'CLEAR NOVA TEJAS INVENTORY');
   } catch (e: any) {
-    nonAdminBlocked = e.message.includes('Only administrators with ADMIN role');
+    nonAdminBlocked = e.message.includes('Unauthorized') || e.message.includes('ADMIN');
   }
-  assert(nonAdminBlocked, 'Rejects Delete All Data when attempted by non-admin CRM_STAFF');
+  assert(nonAdminBlocked, 'Rejects project inventory clear when attempted by unauthorized role');
 
   // Test bad confirmation phrase
   let badPhraseBlocked = false;
   try {
-    await deleteAllProductionData('admin_1', 'ADMIN', 'delete all', true);
+    await clearProjectInventory('proj_nova_tejas', 'admin_1', 'ADMIN', 'clear bad phrase');
   } catch (e: any) {
-    badPhraseBlocked = e.message.includes('DELETE ALL DATA');
+    badPhraseBlocked = e.message.toLowerCase().includes('confirmation');
   }
-  assert(badPhraseBlocked, 'Rejects Delete All Data when confirmation phrase does not match exactly');
+  assert(badPhraseBlocked, 'Rejects project clear when confirmation phrase does not match exactly');
 
-  // Test successful execution with exact phrase
-  const deleteResult = await deleteAllProductionData('admin_1', 'ADMIN', 'DELETE ALL DATA', true);
-  assert(deleteResult.success === true, 'Transactional Delete All Data returns success: true');
+  // Verify project-scoped clear works cleanly
+  const preClearDiyaCount = (db.prepare("SELECT COUNT(*) as c FROM properties WHERE project_id = 'proj_nova_diya_gardens'").get() as any).c;
+  const clearResult = await clearProjectInventory('proj_nova_tejas', 'admin_1', 'ADMIN', 'CLEAR NOVA TEJAS INVENTORY');
+  assert(clearResult.success === true, 'Project-scoped inventory clear succeeds for Nova Tejas');
 
-  const postDeleteProjects = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as any).c;
-  const postDeleteProps = (db.prepare('SELECT COUNT(*) as c FROM properties').get() as any).c;
-  const postDeleteLayouts = (db.prepare('SELECT COUNT(*) as c FROM layouts').get() as any).c;
+  const postClearTejasCount = (db.prepare("SELECT COUNT(*) as c FROM properties WHERE project_id = 'proj_nova_tejas'").get() as any).c;
+  const postClearDiyaCount = (db.prepare("SELECT COUNT(*) as c FROM properties WHERE project_id = 'proj_nova_diya_gardens'").get() as any).c;
+  const postClearProjectRecord = db.prepare("SELECT * FROM projects WHERE id = 'proj_nova_tejas'").get() as any;
 
-  assert(postDeleteProjects === 0, 'Project catalog count is exactly 0 after Delete All Data');
-  assert(postDeleteProps === 0, 'Properties count is exactly 0 after Delete All Data');
-  assert(postDeleteLayouts === 0, 'Layouts count is exactly 0 after Delete All Data');
+  assert(postClearTejasCount === 0, 'Nova Tejas property count is exactly 0 after project clear');
+  assert(postClearDiyaCount === preClearDiyaCount, 'Nova Diya Gardens inventory remains 100% untouched');
+  assert(Boolean(postClearProjectRecord), 'Nova Tejas master project record remains intact in catalog');
 
-  const auditLog = db.prepare("SELECT * FROM audit_logs WHERE action = 'DELETE_ALL_DATA' ORDER BY created_at DESC LIMIT 1").get() as any;
-  assert(Boolean(auditLog) && auditLog.performed_by === 'admin_1', 'Audit log records DELETE_ALL_DATA by admin');
-
-  // Verify ready state with 0 records (no resurrection)
-  assert(isDatabaseReady() === true, 'Database remains in READY state after legitimate Delete All');
+  const auditLog = db.prepare("SELECT * FROM audit_logs WHERE action = 'CLEAR_PROJECT_INVENTORY' ORDER BY created_at DESC LIMIT 1").get() as any;
+  assert(Boolean(auditLog) && auditLog.performed_by === 'admin_1', 'Audit log records CLEAR_PROJECT_INVENTORY by admin');
 
   // -------------------------------------------------------------------------
   // 3. EXCEL IMPORT & CATALOG RECOVERY

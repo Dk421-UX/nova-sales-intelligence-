@@ -545,17 +545,5 @@ export const api = {
       },
       'Failed to clear project inventory'
     );
-  },
-
-  async deleteAllCrmData(confirmation: string) {
-    return request(
-      '/crm/data/delete-all',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-        body: JSON.stringify({ confirmation })
-      },
-      'Failed to delete all data'
-    );
   }
 };

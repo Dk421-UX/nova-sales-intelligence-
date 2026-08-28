@@ -120,63 +120,7 @@ export function seedDatabase() {
     );
 
     // -------------------------------------------------------------
-    // PROJECT 2: Nova Pinnacle (PLOT REFERENCE)
-    // -------------------------------------------------------------
-    let kngSvg = '';
-    const kngSvgPath = path.join(svgDir, 'layout_scheme_plan_option_03.svg');
-    if (fs.existsSync(kngSvgPath)) {
-      kngSvg = fs.readFileSync(kngSvgPath, 'utf-8');
-    }
-
-    insertProject.run(
-      'proj_kng_pudur_opt3',
-      'kng-pudur-option-03',
-      'Nova Pinnacle',
-      'PLOT',
-      'KNG Pudur',
-      'Coimbatore',
-      'Layout plan showing proposed house sites at KNG Pudur, Coimbatore. Spanning 7.89 acres with 129 regular plots and 37 EWS plots, comprehensive road networks, and designated utility reserves.',
-      JSON.stringify(['7.89 Acres Site Area', '129 House Site Plots', '37 EWS Plots', '23,062 sq.ft OSR Area', '12m / 10m / 9m / 7.2m Layout Roads']),
-      JSON.stringify(['OSR Park Reserves', 'TANGEDCO Sub-station Space', 'Public Purpose Reservation', 'Engineered Drainage Channels']),
-      '7.89 Acres (344,098 sq.ft)',
-      129,
-      'Layout Scheme Plan - Option 03.pdf',
-      '/images/kng_pudur_cover.jpg',
-      'ACTIVE',
-      1,
-      now, now, now
-    );
-
-    insertVersion.run('ver_kng_1', 'proj_kng_pudur_opt3', 1, 'PLOT', 'Layout Scheme Option 03 reference registry loaded', 'usr_admin', now);
-
-    insertLayout.run(
-      'lay_kng_1',
-      'proj_kng_pudur_opt3',
-      'Proposed House Sites Layout - Option 03',
-      'SCHEME_PLAN',
-      '3.0',
-      kngSvg,
-      '/layouts/kng_pudur_option_03_layout.png',
-      3370,
-      2384,
-      '0 0 3370 2384',
-      JSON.stringify({
-        site_area_acres: 7.89,
-        site_area_sqft: 344098,
-        total_plots: 129,
-        ews_plots: 37,
-        total_plot_area_sqft: 207123,
-        road_area_sqft: 111458,
-        osr_area_sqft: 23062,
-        tangedco_sqft: 1271,
-        public_purpose_sqft: 1184,
-        ews_block_area_sqft: 23315
-      }),
-      now, now
-    );
-
-    // -------------------------------------------------------------
-    // PROJECT 3: Nova NCR (PLOT)
+    // PROJECT 2: Nova NCR (PLOT)
     // -------------------------------------------------------------
     let ncrSvg = '';
     const ncrSvgPath = path.join(svgDir, 'nova_ncr_subdivision_layout.svg');
@@ -469,8 +413,14 @@ export function seedDatabase() {
     insertVersion.run('ver_vrsquares_1', 'proj_nova_vr_squares', 1, 'APARTMENT', 'Verified apartment loaded', 'usr_admin', now);
 
     // -------------------------------------------------------------
-    // PROJECT 13: Nova Pinnacle (PLOT) — COIMBATORE
+    // PROJECT 12: Nova Pinnacle (PLOT) — COIMBATORE
     // -------------------------------------------------------------
+    let kngSvg = '';
+    const kngSvgPath = path.join(svgDir, 'layout_scheme_plan_option_03.svg');
+    if (fs.existsSync(kngSvgPath)) {
+      kngSvg = fs.readFileSync(kngSvgPath, 'utf-8');
+    }
+
     insertProject.run(
       'proj_nova_pinnacle',
       'nova-pinnacle',
@@ -491,6 +441,32 @@ export function seedDatabase() {
     );
 
     insertVersion.run('ver_pinnacle_1', 'proj_nova_pinnacle', 1, 'PLOT', 'Official master project record registered in Coimbatore catalog', 'usr_admin', now);
+
+    insertLayout.run(
+      'lay_pinnacle_1',
+      'proj_nova_pinnacle',
+      'Proposed House Sites Layout - Option 03',
+      'SCHEME_PLAN',
+      '3.0',
+      kngSvg,
+      '/layouts/kng_pudur_option_03_layout.png',
+      3370,
+      2384,
+      '0 0 3370 2384',
+      JSON.stringify({
+        site_area_acres: 7.89,
+        site_area_sqft: 344098,
+        total_plots: 129,
+        ews_plots: 37,
+        total_plot_area_sqft: 207123,
+        road_area_sqft: 111458,
+        osr_area_sqft: 23062,
+        tangedco_sqft: 1271,
+        public_purpose_sqft: 1184,
+        ews_block_area_sqft: 23315
+      }),
+      now, now
+    );
 
     console.log('[Seed] Projects, layouts, and users registered successfully with non-destructive idempotent baseline.');
   });

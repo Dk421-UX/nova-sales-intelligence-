@@ -147,4 +147,21 @@ export function runMigrations(db: DatabaseType = getDb()) {
     insertMigration.run(8, '008_update_nova_hi_tech_location_to_chennai', new Date().toISOString());
     console.log('[Migration] Applied: 008_update_nova_hi_tech_location_to_chennai');
   }
+
+  // Migration 9: Remove legacy duplicate proj_kng_pudur_opt3 (Canonical is proj_nova_pinnacle)
+  if (!appliedVersions.has(9)) {
+    try {
+      db.prepare("DELETE FROM layouts WHERE project_id = 'proj_kng_pudur_opt3'").run();
+      db.prepare("DELETE FROM project_versions WHERE project_id = 'proj_kng_pudur_opt3'").run();
+      db.prepare("DELETE FROM properties WHERE project_id = 'proj_kng_pudur_opt3'").run();
+      db.prepare("DELETE FROM projects WHERE id = 'proj_kng_pudur_opt3' OR slug = 'kng-pudur-option-03'").run();
+      console.log('[Migration] Cleaned legacy duplicate proj_kng_pudur_opt3.');
+    } catch (e: any) {
+      console.warn('[Migration 9 Warning]:', e.message);
+    }
+
+    const insertMigration = db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+    insertMigration.run(9, '009_remove_duplicate_kng_pinnacle_project', new Date().toISOString());
+    console.log('[Migration] Applied: 009_remove_duplicate_kng_pinnacle_project');
+  }
 }

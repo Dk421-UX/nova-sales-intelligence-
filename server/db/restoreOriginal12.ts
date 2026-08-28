@@ -4,7 +4,7 @@ dotenv.config();
 
 const original12Ids = [
   'proj_nova_diya_gardens',
-  'proj_kng_pudur_opt3',
+  'proj_nova_pinnacle',
   'proj_nova_ncr',
   'proj_nova_edens',
   'proj_nova_city',
