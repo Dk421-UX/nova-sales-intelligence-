@@ -2,6 +2,18 @@ import { getDb } from '../db/database.ts';
 import { recordAuditLog } from './auditService.ts';
 import { syncEntityToSupabase, deleteEntityFromSupabase, syncBatchToSupabase } from '../db/supabaseSync.ts';
 
+// In-Memory Safe Read-Only Cache for Published Properties
+interface CacheEntry {
+  data: { properties: PropertyDto[]; total: number };
+  timestamp: number;
+}
+const propertyQueryCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function invalidatePropertyCache(): void {
+  propertyQueryCache.clear();
+}
+
 export interface PropertyFilter {
   projectId?: string;
   projectSlug?: string;
@@ -69,6 +81,19 @@ export interface PropertyDto {
 }
 
 export function getProperties(filter: PropertyFilter): { properties: PropertyDto[]; total: number } {
+  // Use memory cache for read-only published queries
+  const isPublicQuery = !filter.includeDrafts;
+  const cacheKey = isPublicQuery ? JSON.stringify(filter) : null;
+
+  if (cacheKey && propertyQueryCache.has(cacheKey)) {
+    const cached = propertyQueryCache.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return cached.data;
+    } else {
+      propertyQueryCache.delete(cacheKey);
+    }
+  }
+
   const db = getDb();
   const conditions: string[] = [];
   const params: any[] = [];
@@ -247,7 +272,13 @@ export function getProperties(filter: PropertyFilter): { properties: PropertyDto
     };
   });
 
-  return { properties, total };
+  const result = { properties, total };
+
+  if (cacheKey) {
+    propertyQueryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  }
+
+  return result;
 }
 
 export function getPropertyById(id: string, includeDrafts = false): PropertyDto | null {
@@ -380,6 +411,8 @@ export function createProperty(data: any, userId: string, userRole: string): Pro
     user_role: userRole
   });
 
+  invalidatePropertyCache();
+
   const createdProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
   if (createdProp) {
     syncEntityToSupabase('properties', createdProp).catch(() => {});
@@ -456,6 +489,8 @@ export function updateProperty(id: string, updates: any, userId: string, userRol
     });
   }
 
+  invalidatePropertyCache();
+
   const updatedProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
   if (updatedProp) {
     syncEntityToSupabase('properties', updatedProp).catch(() => {});
@@ -491,6 +526,8 @@ export function archiveProperty(id: string, reason: string, userId: string, user
     performed_by: userId,
     user_role: userRole
   });
+
+  invalidatePropertyCache();
 
   const archivedProp = db.prepare('SELECT * FROM properties WHERE id = ?').get(id) as any;
   if (archivedProp) {
@@ -570,6 +607,8 @@ export function savePropertyGeometry(propertyId: string, layoutId: string, geome
     geometryData.label_y || geometryData.center_y || 0,
     stylingStr, now, now
   );
+
+  invalidatePropertyCache();
 
   recordAuditLog({
     entity_type: 'LAYOUT',

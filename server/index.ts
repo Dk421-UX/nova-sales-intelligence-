@@ -10,7 +10,7 @@ import { seedDatabase } from './db/seed.ts';
 import { validateEnvironment, printStartupStatus } from './utils/envValidator.ts';
 import { getSystemHealth } from './services/healthService.ts';
 import { isSupabaseConfigured } from './db/supabaseClient.ts';
-import { initAndSyncFromSupabase } from './db/supabaseSync.ts';
+import { initAndSyncFromSupabase, waitForHydration } from './db/supabaseSync.ts';
 import { publicRouter } from './routes/publicApi.ts';
 import { crmRouter } from './routes/crmApi.ts';
 import { aiRouter } from './routes/aiApi.ts';
@@ -97,6 +97,19 @@ app.get(['/api/health', '/health'], async (req, res) => {
     });
   }
 });
+
+// Startup Readiness Gate: Guarantees full data hydration before serving customer API requests
+const readinessMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    await waitForHydration();
+    next();
+  } catch (err: any) {
+    console.error('[Readiness Middleware Error]:', err.message);
+    next();
+  }
+};
+
+app.use(['/api/public', '/public', '/api/crm', '/crm', '/api/ai', '/ai'], readinessMiddleware);
 
 // API Routers (mounted with and without /api prefix to support all proxy/Vercel rewrites)
 app.use('/api/public', publicRouter);

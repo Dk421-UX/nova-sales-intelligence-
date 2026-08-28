@@ -11,7 +11,8 @@ function getAuthHeader(): Record<string, string> {
 async function request<T = any>(
   endpoint: string, 
   options: RequestInit = {}, 
-  fallbackMessage = 'Request failed'
+  fallbackMessage = 'Request failed',
+  retryCount = 0
 ): Promise<T> {
   const url = endpoint.startsWith('http') 
     ? endpoint 
@@ -21,6 +22,12 @@ async function request<T = any>(
   try {
     res = await fetch(url, options);
   } catch (netErr: any) {
+    // Polite bounded single retry for GET requests during server cold-wake
+    const method = (options.method || 'GET').toUpperCase();
+    if (method === 'GET' && retryCount < 1) {
+      await new Promise(r => setTimeout(r, 1000));
+      return request<T>(endpoint, options, fallbackMessage, retryCount + 1);
+    }
     console.error(`[API Network Error] ${options.method || 'GET'} ${url}:`, netErr);
     throw new Error('Unable to connect to the server. Please check your network connection.');
   }
@@ -54,6 +61,11 @@ async function request<T = any>(
     throw new Error(`API endpoint '${endpoint}' not found (HTTP 404).`);
   }
   if (res.status >= 500) {
+    const method = (options.method || 'GET').toUpperCase();
+    if (method === 'GET' && retryCount < 1) {
+      await new Promise(r => setTimeout(r, 1000));
+      return request<T>(endpoint, options, fallbackMessage, retryCount + 1);
+    }
     throw new Error(`Server encountered an issue (HTTP ${res.status}). Please try again shortly.`);
   }
 

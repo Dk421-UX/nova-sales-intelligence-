@@ -49,7 +49,28 @@ export function getAllProjects(includeUnpublished = false): ProjectDto[] {
     ORDER BY p.name ASC
   `).all() as any[];
 
-  return projects.map(p => enrichProjectWithStats(db, p));
+  // Performance Optimization: Batch calculate inventory stats in a single grouped query
+  const statsMap = new Map<string, any>();
+  try {
+    const allStats = db.prepare(`
+      SELECT
+        project_id,
+        COUNT(*) as total_inventory,
+        SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END) as available,
+        SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END) as booked,
+        SUM(CASE WHEN status = 'REGISTERED' THEN 1 ELSE 0 END) as registered,
+        SUM(CASE WHEN status = 'SOLD' THEN 1 ELSE 0 END) as sold,
+        SUM(CASE WHEN status = 'RESERVED' THEN 1 ELSE 0 END) as reserved
+      FROM properties
+      WHERE is_archived = 0 AND is_superseded = 0 AND is_published = 1
+      GROUP BY project_id
+    `).all() as any[];
+    for (const row of allStats) {
+      statsMap.set(row.project_id, row);
+    }
+  } catch (e) {}
+
+  return projects.map(p => enrichProjectWithStats(db, p, statsMap.get(p.id)));
 }
 
 export function getProjectBySlug(slug: string, includeUnpublished = false): ProjectDto | null {
@@ -68,9 +89,8 @@ export function getProjectById(id: string, includeUnpublished = false): ProjectD
   return enrichProjectWithStats(db, project);
 }
 
-function enrichProjectWithStats(db: any, project: any): ProjectDto {
-  // Calculated live from the database
-  const statsRow = db.prepare(`
+function enrichProjectWithStats(db: any, project: any, precalculatedStats?: any): ProjectDto {
+  const statsRow = precalculatedStats || db.prepare(`
     SELECT
       COUNT(*) as total_inventory,
       SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END) as available,
@@ -123,10 +143,14 @@ export function getProjectLayout(projectId: string) {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? OR slug = ?').get(projectId, projectId) as any;
   const targetId = project ? project.id : projectId;
 
+  // Prioritize durable cloud storage URLs (https://) and newest published versions
   const layout = db.prepare(`
     SELECT * FROM layouts 
     WHERE project_id = ? AND (status = 'PUBLISHED' OR (status IS NULL AND is_active = 1))
-    ORDER BY updated_at DESC LIMIT 1
+    ORDER BY 
+      CASE WHEN image_url LIKE 'http%' THEN 0 ELSE 1 END ASC,
+      updated_at DESC 
+    LIMIT 1
   `).get(targetId) as any;
 
   if (!layout) return null;
